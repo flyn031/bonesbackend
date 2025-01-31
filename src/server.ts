@@ -1,31 +1,42 @@
-import pdfRoutes from './routes/pdf';
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import pdfRoutes from './routes/pdf';
 import authRoutes from './routes/auth';
 import customerRoutes from './routes/customers';
 import orderRoutes from './routes/orders';
 import financialRoutes from './routes/financial';
+import supplierRoutes from './routes/suppliers';
+import materialRoutes from './routes/materials';
 
 dotenv.config();
-
 const app = express();
 const prisma = new PrismaClient();
 
-// Add logging middleware
+// Middleware order is important!
+// 1. Body parsing middleware must come first
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// 2. CORS
+app.use(cors());
+
+// 3. Logging middleware
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  console.log(`${req.method} ${req.path}`, req.body);
   next();
 });
 
-app.use(cors());
-app.use(express.json());
+// 4. Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/financial', financialRoutes);
 app.use('/api/pdf', pdfRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/materials', materialRoutes);
+
 // Basic health check endpoint
 app.get('/health', async (req, res) => {
   try {
@@ -36,7 +47,7 @@ app.get('/health', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
