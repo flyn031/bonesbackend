@@ -6,14 +6,23 @@ import {
     createCurrencyRate,
     getCurrentRate
 } from '../controllers/financialController';
+import { 
+    getFinancialSummary, 
+    getSupplierFinancialPerformance 
+} from '../controllers/financialReportController';
 
 const router = Router();
 
 router.use(authenticateToken);
 
+// Existing routes
 router.post('/milestones', createPaymentMilestone);
 router.post('/tax-settings', createRegionalTaxSetting);
 router.post('/currency-rates', createCurrencyRate);
 router.get('/currency-rates/:fromCurrency/:toCurrency', getCurrentRate);
+
+// New reporting routes
+router.get('/summary', getFinancialSummary);
+router.get('/supplier-performance', getSupplierFinancialPerformance);
 
 export default router;

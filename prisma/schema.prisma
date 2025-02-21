@@ -7,6 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum MaterialCategory {
+  RAW_MATERIAL
+  MACHINE_PART
+  CONVEYOR_COMPONENT
+  OFFICE_SUPPLY
+  KITCHEN_SUPPLY
+  SAFETY_EQUIPMENT
+  CLEANING_SUPPLY
+  ELECTRICAL_COMPONENT
+  MECHANICAL_COMPONENT
+  OTHER
+}
+
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
@@ -32,53 +45,50 @@ model Job {
 }
 
 model Customer {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   name         String
-  email        String?  @unique
+  email        String?    @unique
   phone        String?
   address      String?
+  importSource String?    // New field to track import source
+  status       String?    // New field for customer status
+  totalOrders  Int        @default(0) // New field for total orders
+  totalSpent   Float      @default(0) // New field for total spent
+  lastOrderDate DateTime? // New field for last order date
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
   orders       Order[]
-  jobs         Job[]
-  importSource String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  materials    Material[]
+  jobs         Job[] 
 }
-
 model Order {
   id              String      @id @default(cuid())
   projectTitle    String
   quoteRef        String      @unique
   orderType       OrderType   @default(CUSTOMER_LINKED)
   status          OrderStatus @default(DRAFT)
-
-  // Customer Details
   customerName    String
   contactPerson   String
   contactPhone    String
   contactEmail    String
-  
-  // Basic Financial Details
   projectValue    Float
   marginPercent   Float
   leadTimeWeeks   Int
-  items           Json        // Array of ordered items
-
-  // Advanced Financial Details
-  costBreakdown        Json?       // Detailed cost structure
-  paymentTerms        PaymentTerms @default(THIRTY_DAYS)
-  customPaymentTerms  String?     // For custom payment arrangements
-  currency           String      @default("GBP")
-  exchangeRate       Float?      // For international orders
-  vatRate            Float?      // Tax rate
-  subTotal           Float      @default(0)  // Before tax
-  totalTax           Float      @default(0)  // VAT/Tax amount
-  totalAmount        Float      @default(0)  // Including tax
-  profitMargin       Float      @default(0)  // Calculated margin
-  discounts          Json?       // Any applied discounts
-  paymentSchedule    Json?       // Payment milestones
-  budgetAllocations  Json?       // Budget breakdown
-
-  // Relations
+  items           Json
+  costBreakdown   Json?
+  paymentTerms    PaymentTerms @default(THIRTY_DAYS)
+  customPaymentTerms String?
+  currency        String      @default("GBP")
+  exchangeRate    Float?
+  vatRate         Float?
+  subTotal        Float       @default(0)
+  totalTax        Float       @default(0)
+  totalAmount     Float       @default(0)
+  profitMargin    Float       @default(0)
+  discounts       Json?
+  paymentSchedule Json?
+  budgetAllocations Json?
+  notes           String?
   customer        Customer?   @relation(fields: [customerId], references: [id])
   customerId      String?
   job             Job?        @relation(fields: [jobId], references: [id])
@@ -87,10 +97,7 @@ model Order {
   projectOwnerId  String
   createdBy       User        @relation("CreatedBy", fields: [createdById], references: [id])
   createdById     String
-
-  // Payment Milestones
   paymentMilestones PaymentMilestone[]
-
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 }
@@ -138,33 +145,54 @@ model PaymentMilestone {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
+
 model Supplier {
-  id          String   @id @default(cuid())
-  name        String
-  email       String?  @unique
-  phone       String?
-  address     String?
-  materials   Material[]
-  rating      Float?
-  status      SupplierStatus @default(ACTIVE)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  phone         String?
+  address       String?
+  rating        Float?
+  status        SupplierStatus @default(ACTIVE)
+  totalOrders   Int       @default(0)
+  completedOrders Int     @default(0)
+  averageDeliveryTime Float @default(0)
+  lastOrderDate DateTime?
+  materials     Material[]
+  performanceHistory Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model Material {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  name        String
-  description String?
-  unitPrice   Float
-  unit        String   // e.g., "kg", "meter", "piece"
-  minStock    Int      // Minimum stock level
-  currentStock Int
-  supplier    Supplier @relation(fields: [supplierId], references: [id])
-  supplierId  String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String           @id @default(cuid())
+  code              String           @unique
+  name              String
+  description       String?
+  category          MaterialCategory @default(OTHER)
+  unitPrice         Float
+  unit              String
+  minStockLevel     Int              @default(0)
+  currentStockLevel Int              @default(0)
+  reorderPoint      Int              @default(0)
+  leadTimeInDays    Int              @default(0)
+  manufacturer      String?
+  productSpecifications Json?
+  supplier          Supplier?        @relation(fields: [supplierId], references: [id])
+  supplierId        String?
+  customer          Customer?        @relation(fields: [customerId], references: [id])
+  customerId        String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 }
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  UNDER_REVIEW
+  BLACKLISTED
+}
+
 enum Role {
   USER
   ADMIN
@@ -209,11 +237,7 @@ enum PaymentTerms {
   NINETY_DAYS
   CUSTOM
 }
-enum SupplierStatus {
-  ACTIVE
-  INACTIVE
-  BLACKLISTED
-}
+
 enum MilestoneStatus {
   PENDING
   OVERDUE

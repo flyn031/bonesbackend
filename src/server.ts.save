@@ -8,9 +8,6 @@ import customerRoutes from './routes/customers';
 import orderRoutes from './routes/orders';
 import financialRoutes from './routes/financial';
 import supplierRoutes from './routes/suppliers';
-import materialRoutes from './routes/materials';
-import inventoryRoutes from './routes/inventory';
-import dashboardRoutes from './routes/dashboard';
 
 dotenv.config();
 const app = express();
@@ -24,21 +21,10 @@ app.use(express.urlencoded({ extended: true }));
 // 2. CORS
 app.use(cors());
 
-// 3. Enhanced logging middleware
+// 3. Logging middleware
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
-    body: req.body,
-    auth: req.headers.authorization ? `Bearer token present: ${req.headers.authorization.substring(0, 20)}...` : 'No token',
-    query: req.query,
-    params: req.params
-  });
+  console.log(`${req.method} ${req.path}`, req.body);
   next();
-});
-
-// Global error handler
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
 });
 
 // 4. Routes
@@ -48,9 +34,6 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/financial', financialRoutes);
 app.use('/api/pdf', pdfRoutes);
 app.use('/api/suppliers', supplierRoutes);
-app.use('/api/materials', materialRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/dashboard', dashboardRoutes);
 
 // Basic health check endpoint
 app.get('/health', async (req, res) => {
