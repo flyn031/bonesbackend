@@ -1,4 +1,13 @@
 -- CreateEnum
+CREATE TYPE "MaterialCategory" AS ENUM ('RAW_MATERIAL', 'MACHINE_PART', 'CONVEYOR_COMPONENT', 'OFFICE_SUPPLY', 'KITCHEN_SUPPLY', 'SAFETY_EQUIPMENT', 'CLEANING_SUPPLY', 'ELECTRICAL_COMPONENT', 'MECHANICAL_COMPONENT', 'OTHER');
+
+-- CreateEnum
+CREATE TYPE "JobStatus" AS ENUM ('ACTIVE', 'DRAFT', 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELED');
+
+-- CreateEnum
+CREATE TYPE "SupplierStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'UNDER_REVIEW', 'BLACKLISTED');
+
+-- CreateEnum
 CREATE TYPE "Role" AS ENUM ('USER', 'ADMIN');
 
 -- CreateEnum
@@ -8,16 +17,10 @@ CREATE TYPE "OrderType" AS ENUM ('JOB_LINKED', 'CUSTOMER_LINKED', 'INTERNAL');
 CREATE TYPE "OrderStatus" AS ENUM ('DRAFT', 'PENDING_APPROVAL', 'APPROVED', 'DECLINED', 'IN_PRODUCTION', 'ON_HOLD', 'READY_FOR_DELIVERY', 'DELIVERED', 'COMPLETED', 'CANCELLED');
 
 -- CreateEnum
-CREATE TYPE "JobStatus" AS ENUM ('ACTIVE', 'COMPLETED', 'CANCELED');
-
--- CreateEnum
 CREATE TYPE "ImportStatus" AS ENUM ('SUCCESS', 'PARTIAL', 'FAILED');
 
 -- CreateEnum
 CREATE TYPE "PaymentTerms" AS ENUM ('WITH_ORDER', 'PRIOR_TO_DISPATCH', 'THIRTY_DAYS', 'SIXTY_DAYS', 'NINETY_DAYS', 'CUSTOM');
-
--- CreateEnum
-CREATE TYPE "SupplierStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'BLACKLISTED');
 
 -- CreateEnum
 CREATE TYPE "MilestoneStatus" AS ENUM ('PENDING', 'OVERDUE', 'PAID', 'CANCELLED');
@@ -40,12 +43,54 @@ CREATE TABLE "Job" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "description" TEXT,
-    "status" "JobStatus" NOT NULL DEFAULT 'ACTIVE',
+    "status" "JobStatus" NOT NULL DEFAULT 'DRAFT',
     "customerId" TEXT NOT NULL,
+    "startDate" TIMESTAMP(3),
+    "expectedEndDate" TIMESTAMP(3),
+    "actualEndDate" TIMESTAMP(3),
+    "estimatedCost" DOUBLE PRECISION,
+    "actualCost" DOUBLE PRECISION,
+    "createdById" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Job_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "UserJobAssignment" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "role" TEXT,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" TIMESTAMP(3),
+
+    CONSTRAINT "UserJobAssignment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "JobMaterial" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "materialId" TEXT NOT NULL,
+    "quantityUsed" DOUBLE PRECISION NOT NULL,
+    "estimatedCost" DOUBLE PRECISION,
+    "actualCost" DOUBLE PRECISION,
+    "usageNotes" TEXT,
+
+    CONSTRAINT "JobMaterial_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "JobNote" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "authorId" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "JobNote_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -56,6 +101,10 @@ CREATE TABLE "Customer" (
     "phone" TEXT,
     "address" TEXT,
     "importSource" TEXT,
+    "status" TEXT,
+    "totalOrders" INTEGER NOT NULL DEFAULT 0,
+    "totalSpent" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "lastOrderDate" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -90,6 +139,7 @@ CREATE TABLE "Order" (
     "discounts" JSONB,
     "paymentSchedule" JSONB,
     "budgetAllocations" JSONB,
+    "notes" TEXT,
     "customerId" TEXT,
     "jobId" TEXT,
     "projectOwnerId" TEXT NOT NULL,
@@ -159,11 +209,17 @@ CREATE TABLE "PaymentMilestone" (
 CREATE TABLE "Supplier" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "email" TEXT,
+    "email" TEXT NOT NULL,
     "phone" TEXT,
     "address" TEXT,
     "rating" DOUBLE PRECISION,
     "status" "SupplierStatus" NOT NULL DEFAULT 'ACTIVE',
+    "notes" TEXT,
+    "totalOrders" INTEGER NOT NULL DEFAULT 0,
+    "completedOrders" INTEGER NOT NULL DEFAULT 0,
+    "averageDeliveryTime" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "lastOrderDate" TIMESTAMP(3),
+    "performanceHistory" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -176,11 +232,17 @@ CREATE TABLE "Material" (
     "code" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT,
+    "category" "MaterialCategory" NOT NULL DEFAULT 'OTHER',
     "unitPrice" DOUBLE PRECISION NOT NULL,
     "unit" TEXT NOT NULL,
-    "minStock" INTEGER NOT NULL,
-    "currentStock" INTEGER NOT NULL,
-    "supplierId" TEXT NOT NULL,
+    "minStockLevel" INTEGER NOT NULL DEFAULT 0,
+    "currentStockLevel" INTEGER NOT NULL DEFAULT 0,
+    "reorderPoint" INTEGER NOT NULL DEFAULT 0,
+    "leadTimeInDays" INTEGER NOT NULL DEFAULT 0,
+    "manufacturer" TEXT,
+    "productSpecifications" JSONB,
+    "supplierId" TEXT,
+    "customerId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -206,6 +268,27 @@ CREATE UNIQUE INDEX "Material_code_key" ON "Material"("code");
 ALTER TABLE "Job" ADD CONSTRAINT "Job_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Job" ADD CONSTRAINT "Job_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "UserJobAssignment" ADD CONSTRAINT "UserJobAssignment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "UserJobAssignment" ADD CONSTRAINT "UserJobAssignment_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "JobMaterial" ADD CONSTRAINT "JobMaterial_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "JobMaterial" ADD CONSTRAINT "JobMaterial_materialId_fkey" FOREIGN KEY ("materialId") REFERENCES "Material"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "JobNote" ADD CONSTRAINT "JobNote_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "Job"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "JobNote" ADD CONSTRAINT "JobNote_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Order" ADD CONSTRAINT "Order_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -221,4 +304,7 @@ ALTER TABLE "Order" ADD CONSTRAINT "Order_createdById_fkey" FOREIGN KEY ("create
 ALTER TABLE "PaymentMilestone" ADD CONSTRAINT "PaymentMilestone_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Material" ADD CONSTRAINT "Material_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "Supplier"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Material" ADD CONSTRAINT "Material_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "Supplier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Material" ADD CONSTRAINT "Material_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;

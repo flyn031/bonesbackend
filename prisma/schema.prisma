@@ -20,28 +20,108 @@ enum MaterialCategory {
   OTHER
 }
 
+enum JobStatus {
+  ACTIVE     // New line to preserve existing status
+  DRAFT
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  name          String
-  password      String
-  role          Role     @default(USER)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  createdOrders Order[]  @relation("CreatedBy")
-  managedOrders Order[]  @relation("ProjectOwner")
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String
+  password        String
+  role            Role     @default(USER)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  createdOrders   Order[]  @relation("CreatedBy")
+  managedOrders   Order[]  @relation("ProjectOwner")
+  
+  createdJobs     Job[]    @relation("JobCreator")
+  jobAssignments  UserJobAssignment[]
+  jobNotes        JobNote[]
 }
 
 model Job {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
-  status      JobStatus @default(ACTIVE)
-  customer    Customer  @relation(fields: [customerId], references: [id])
-  customerId  String
-  orders      Order[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  
+  // Basic Job Details
+  title           String
+  description     String?
+  status          JobStatus @default(DRAFT)
+  
+  // Relationships
+  customer        Customer  @relation(fields: [customerId], references: [id])
+  customerId      String
+  
+  orders          Order[]
+  
+  // Tracking and Timing
+  startDate       DateTime?
+  expectedEndDate DateTime?
+  actualEndDate   DateTime?
+  
+  // Resource Allocation
+  assignedUsers   UserJobAssignment[]
+  
+  // Materials and Resources
+  materialUsed    JobMaterial[]
+  
+  // Costing and Billing
+  estimatedCost   Float?
+  actualCost      Float?
+  
+  // Audit and Tracking
+  createdBy       User     @relation("JobCreator", fields: [createdById], references: [id])
+  createdById     String
+  
+  notes           JobNote[]
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model UserJobAssignment {
+  id            String   @id @default(cuid())
+  user          User     @relation(fields: [userId], references: [id])
+  userId        String
+  job           Job      @relation(fields: [jobId], references: [id])
+  jobId         String
+  role          String?
+  
+  assignedAt     DateTime @default(now())
+  completedAt    DateTime?
+}
+
+model JobMaterial {
+  id            String   @id @default(cuid())
+  job           Job      @relation(fields: [jobId], references: [id])
+  jobId         String
+  material      Material @relation(fields: [materialId], references: [id])
+  materialId    String
+  
+  quantityUsed  Float
+  estimatedCost Float?
+  actualCost    Float?
+  
+  usageNotes    String?
+}
+
+model JobNote {
+  id          String   @id @default(cuid())
+  job         Job      @relation(fields: [jobId], references: [id])
+  jobId       String
+  
+  author      User     @relation(fields: [authorId], references: [id])
+  authorId    String
+  
+  content     String
+  createdAt   DateTime @default(now())
 }
 
 model Customer {
@@ -50,17 +130,18 @@ model Customer {
   email        String?    @unique
   phone        String?
   address      String?
-  importSource String?    // New field to track import source
-  status       String?    // New field for customer status
-  totalOrders  Int        @default(0) // New field for total orders
-  totalSpent   Float      @default(0) // New field for total spent
-  lastOrderDate DateTime? // New field for last order date
+  importSource String?
+  status       String?
+  totalOrders  Int        @default(0)
+  totalSpent   Float      @default(0)
+  lastOrderDate DateTime? 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   orders       Order[]
   materials    Material[]
   jobs         Job[] 
 }
+
 model Order {
   id              String      @id @default(cuid())
   projectTitle    String
@@ -154,6 +235,7 @@ model Supplier {
   address       String?
   rating        Float?
   status        SupplierStatus @default(ACTIVE)
+  notes         String?
   totalOrders   Int       @default(0)
   completedOrders Int     @default(0)
   averageDeliveryTime Float @default(0)
@@ -182,9 +264,11 @@ model Material {
   supplierId        String?
   customer          Customer?        @relation(fields: [customerId], references: [id])
   customerId        String?
+  jobMaterials      JobMaterial[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 }
+
 enum SupplierStatus {
   ACTIVE
   INACTIVE
@@ -215,12 +299,6 @@ enum OrderStatus {
   DELIVERED
   COMPLETED
   CANCELLED
-}
-
-enum JobStatus {
-  ACTIVE
-  COMPLETED
-  CANCELED
 }
 
 enum ImportStatus {

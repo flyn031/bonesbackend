@@ -88,6 +88,48 @@ export const getMaterials = async (req: Request, res: Response) => {
  }
 };
 
+export const getMaterialById = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const material = await prisma.material.findUnique({
+      where: { id },
+      include: {
+        supplier: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        customer: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!material) {
+      return res.status(404).json({ error: 'Material not found' });
+    }
+
+    // Add supplier name directly to material object for easier access in frontend
+    const materialWithNames = {
+      ...material,
+      supplierName: material.supplier?.name || null
+    };
+
+    res.json(materialWithNames);
+  } catch (error) {
+    console.error('Error fetching material:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch material', 
+      details: error instanceof Error ? error.message : 'Unknown error' 
+    });
+  }
+};
+
 export const getMaterialCategories = async (req: Request, res: Response) => {
  try {
    const categories = [

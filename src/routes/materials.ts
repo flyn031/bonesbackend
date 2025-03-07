@@ -7,7 +7,8 @@ import {
    createSampleMaterials,
    updateMaterial,
    deleteMaterial,
-   getMaterialCategories
+   getMaterialCategories,
+   getMaterialById  // Add this import
 } from '../controllers/materialController';
 
 const router = Router();
@@ -16,6 +17,7 @@ router.use(authenticateToken);
 
 router.post('/', createMaterial);
 router.get('/', getMaterials);
+router.get('/:id', getMaterialById);  // Add this route
 router.put('/:id/stock', updateStock);
 router.post('/:supplierId/sample-materials', createSampleMaterials);
 
