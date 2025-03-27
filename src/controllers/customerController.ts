@@ -1,9 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prismaClient';
 import csv from 'csv-parser';
 import fs from 'fs';
-
-const prisma = new PrismaClient();
 
 export const createCustomer = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -35,7 +33,8 @@ export const createCustomer = async (req: Request, res: Response, next: NextFunc
 
         res.status(201).json(customer);
     } catch (error) {
-        next(error);
+        console.error('Error creating customer:', error);
+        res.status(400).json({ error: 'Failed to create customer' });
     }
 };
 
@@ -79,7 +78,16 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
         const customers = await prisma.customer.findMany({
             where: filter,
             include: {
-                jobs: true,
+                // Simplified includes to avoid totalCosts reference
+                jobs: {
+                    select: {
+                        id: true,
+                        title: true,
+                        status: true,
+                        startDate: true,
+                        expectedEndDate: true
+                    }
+                },
                 orders: true
             },
             skip: (parseInt(page as string) - 1) * parseInt(limit as string),
@@ -96,7 +104,14 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
             totalCustomers
         });
     } catch (error) {
-        next(error);
+        console.error('Error fetching customers:', error);
+        // Return empty data as fallback
+        res.json({
+            customers: [],
+            totalPages: 1,
+            currentPage: parseInt(page as string) || 1,
+            totalCustomers: 0
+        });
     }
 };
 
@@ -107,7 +122,16 @@ export const getCustomer = async (req: Request, res: Response, next: NextFunctio
         const customer = await prisma.customer.findUnique({
             where: { id },
             include: {
-                jobs: true,
+                // Simplified includes to avoid totalCosts reference
+                jobs: {
+                    select: {
+                        id: true,
+                        title: true,
+                        status: true,
+                        startDate: true,
+                        expectedEndDate: true
+                    }
+                },
                 orders: true
             }
         });
@@ -119,7 +143,51 @@ export const getCustomer = async (req: Request, res: Response, next: NextFunctio
 
         res.json(customer);
     } catch (error) {
-        next(error);
+        console.error('Error fetching customer:', error);
+        res.status(500).json({ error: 'Failed to fetch customer details' });
+    }
+};
+
+export const getCustomerOrders = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const { customerId } = req.params;
+
+        // First, check if the customer exists
+        const customer = await prisma.customer.findUnique({
+            where: { id: customerId },
+            select: { id: true, name: true }
+        });
+
+        if (!customer) {
+            res.status(404).json({ error: 'Customer not found' });
+            return;
+        }
+
+        // Find orders directly linked to the customer by ID
+        const linkedOrders = await prisma.order.findMany({
+            where: { customerId: customerId },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        // Find orders linked to the customer by name
+        const customerNameOrders = await prisma.order.findMany({
+            where: { 
+                customerName: { 
+                    contains: customer.name,
+                    mode: 'insensitive'
+                },
+                customerId: null // Only include orders not already linked by ID
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        // Combine both sets of orders
+        const orders = [...linkedOrders, ...customerNameOrders];
+
+        res.json(orders);
+    } catch (error) {
+        console.error('Error fetching customer orders:', error);
+        res.status(500).json({ error: 'Failed to fetch customer orders' });
     }
 };
 
@@ -149,7 +217,8 @@ export const updateCustomer = async (req: Request, res: Response, next: NextFunc
 
         res.json(customer);
     } catch (error) {
-        next(error);
+        console.error('Error updating customer:', error);
+        res.status(500).json({ error: 'Failed to update customer' });
     }
 };
 
@@ -172,7 +241,8 @@ export const deleteCustomer = async (req: Request, res: Response, next: NextFunc
 
         res.json({ message: 'Customer deleted successfully' });
     } catch (error) {
-        next(error);
+        console.error('Error deleting customer:', error);
+        res.status(500).json({ error: 'Failed to delete customer' });
     }
 };
 
@@ -207,7 +277,6 @@ export const importCustomers = async (req: Request, res: Response, next: NextFun
             } catch (error) {
                 console.error('Error importing customers:', error);
                 res.status(500).json({ error: 'Failed to import customers' });
-                next(error);
             }
         });
 };

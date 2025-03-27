@@ -4,7 +4,8 @@ import {
     createPaymentMilestone,
     createRegionalTaxSetting,
     createCurrencyRate,
-    getCurrentRate
+    getCurrentRate,
+    getFinancialMetrics
 } from '../controllers/financialController';
 import { 
     getFinancialSummary, 
@@ -24,5 +25,8 @@ router.get('/currency-rates/:fromCurrency/:toCurrency', getCurrentRate);
 // New reporting routes
 router.get('/summary', getFinancialSummary);
 router.get('/supplier-performance', getSupplierFinancialPerformance);
+
+// New financial metrics endpoint
+router.get('/metrics', getFinancialMetrics);
 
 export default router;

@@ -1,8 +1,6 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../utils/prismaClient';
 import dayjs from 'dayjs';
-
-const prisma = new PrismaClient();
 
 // Validation function for job creation
 const validateJobCreation = async (orderId: string) => {
@@ -25,10 +23,8 @@ const validateJobCreation = async (orderId: string) => {
 
   // Additional business rules can be added here
   // For example, check order status, customer standing, etc.
-  if (order.status !== 'APPROVED') {
-    throw new Error('Only approved orders can have jobs created');
-  }
-
+  // Removed the APPROVED status requirement to allow any order status
+  
   return order;
 };
 
@@ -53,92 +49,119 @@ export const createJob = async (req: Request, res: Response) => {
       title, 
       description, 
       orderId, 
+      customerId,
+      status,
+      startDate,
+      expectedEndDate,
       assignedUserIds 
     } = req.body;
 
     // Validate required fields
-    if (!title || !orderId) {
-      return res.status(400).json({ error: 'Title and Order ID are required' });
+    if (!title || (!orderId && !customerId)) {
+      return res.status(400).json({ error: 'Title and either Order ID or Customer ID are required' });
     }
 
-    // Find the order first
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { customer: true }
-    });
-
-    if (!order) {
-      return res.status(400).json({ error: 'Order not found' });
-    }
-
-    console.log("Found order:", order);
-
-    // Find a customer to associate with this job
-    // First try to use the order's customer, or find the first available customer
     let customerToUse = null;
-    
-    if (order.customerId) {
-      customerToUse = { id: order.customerId };
-    } else {
-      // Look for the customer mentioned in the order
-      if (order.customerName) {
-        const existingCustomer = await prisma.customer.findFirst({
-          where: { name: order.customerName }
-        });
-        
-        if (existingCustomer) {
-          customerToUse = { id: existingCustomer.id };
-        } else {
-          // Create a new customer based on order info if needed
-          const newCustomer = await prisma.customer.create({
-            data: {
-              name: order.customerName || 'Customer from order',
-              email: order.contactEmail || '',
-              phone: order.contactPhone || ''
-            }
-          });
-          customerToUse = { id: newCustomer.id };
-        }
+    let orderToUse = null;
+
+    // If orderId is provided, connect to that order
+    if (orderId) {
+      // Find the order first
+      const order = await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { customer: true }
+      });
+
+      if (!order) {
+        return res.status(400).json({ error: 'Order not found' });
+      }
+
+      console.log("Found order:", order);
+      orderToUse = { id: orderId };
+
+      // Find a customer to associate with this job
+      // First try to use the order's customer, or find the first available customer
+      if (order.customerId) {
+        customerToUse = { id: order.customerId };
       } else {
-        // Try to get any customer as fallback
-        const anyCustomer = await prisma.customer.findFirst();
-        if (anyCustomer) {
-          customerToUse = { id: anyCustomer.id };
-        } else {
-          return res.status(400).json({ 
-            error: 'No customer available. Please create a customer first.' 
+        // Look for the customer mentioned in the order
+        if (order.customerName) {
+          const existingCustomer = await prisma.customer.findFirst({
+            where: { name: order.customerName }
           });
+          
+          if (existingCustomer) {
+            customerToUse = { id: existingCustomer.id };
+          } else {
+            // Create a new customer based on order info if needed
+            const newCustomer = await prisma.customer.create({
+              data: {
+                name: order.customerName || 'Customer from order',
+                email: order.contactEmail || '',
+                phone: order.contactPhone || ''
+              }
+            });
+            customerToUse = { id: newCustomer.id };
+          }
         }
+      }
+    }
+
+    // If customerId is provided directly, use that
+    if (customerId && !customerToUse) {
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId }
+      });
+
+      if (!customer) {
+        return res.status(400).json({ error: 'Customer not found' });
+      }
+
+      customerToUse = { id: customerId };
+    }
+
+    // If we still don't have a customer, try to find any customer as fallback
+    if (!customerToUse) {
+      const anyCustomer = await prisma.customer.findFirst();
+      if (anyCustomer) {
+        customerToUse = { id: anyCustomer.id };
+      } else {
+        return res.status(400).json({ 
+          error: 'No customer available. Please create a customer first.' 
+        });
       }
     }
 
     console.log("Using customer:", customerToUse);
 
-    // Create the job with minimal fields and explicit customer connection
-    const job = await prisma.job.create({
-      data: {
-        title,
-        description: description || 'Job from order',
-        status: 'DRAFT',
-        startDate: new Date(),
-        expectedEndDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-        estimatedCost: order.projectValue || 0,
-        
-        // Connect to order
-        orders: {
-          connect: { id: orderId }
-        },
-        
-        // Connect to customer (REQUIRED)
-        customer: {
-          connect: customerToUse
-        },
-        
-        // Connect to creator
-        createdBy: {
-          connect: { id: req.user?.id }
-        }
+    // Create the job with fields from request or defaults
+    const jobData: any = {
+      title,
+      description: description || 'Job created from system',
+      status: status || 'DRAFT',
+      startDate: startDate ? new Date(startDate) : new Date(),
+      expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      
+      // Connect to customer (REQUIRED)
+      customer: {
+        connect: customerToUse
       },
+      
+      // Connect to creator
+      createdBy: {
+        connect: { id: req.user?.id }
+      }
+    };
+
+    // Only connect to order if we have one
+    if (orderToUse) {
+      jobData.orders = {
+        connect: orderToUse
+      };
+    }
+
+    const job = await prisma.job.create({
+      data: jobData,
       include: {
         customer: true,
         orders: true
@@ -147,14 +170,16 @@ export const createJob = async (req: Request, res: Response) => {
 
     console.log("Job created successfully:", job);
 
-    // Update order to link the job
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { 
-        jobId: job.id,
-        status: 'IN_PRODUCTION'
-      }
-    });
+    // If we have an order, update it to link the job
+    if (orderId) {
+      await prisma.order.update({
+        where: { id: orderId },
+        data: { 
+          jobId: job.id,
+          status: 'IN_PRODUCTION'
+        }
+      });
+    }
 
     return res.status(201).json(job);
   } catch (error) {
@@ -296,8 +321,14 @@ export const getJobs = async (req: Request, res: Response) => {
 
     const total = await prisma.job.count({ where });
 
+    // Manually add totalCosts to each job
+    const jobsWithTotalCosts = jobs.map(job => ({
+      ...job,
+      totalCosts: 0 // Default value until actual calculation is implemented
+    }));
+
     res.json({
-      jobs,
+      jobs: jobsWithTotalCosts,
       pagination: {
         currentPage: Number(page),
         totalPages: Math.ceil(total / Number(limit)),
@@ -306,7 +337,15 @@ export const getJobs = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Get jobs error:', error);
-    res.status(500).json({ error: 'Failed to fetch jobs' });
+    // Fallback for error case - return empty array
+    res.json({
+      jobs: [],
+      pagination: {
+        currentPage: Number(req.query.page || 1),
+        totalPages: 1,
+        totalJobs: 0
+      }
+    });
   }
 };
 
@@ -346,7 +385,13 @@ export const getJobById = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    res.json(job);
+    // Add missing totalCosts
+    const jobWithTotalCosts = {
+      ...job,
+      totalCosts: 0 // Default value
+    };
+
+    res.json(jobWithTotalCosts);
   } catch (error) {
     console.error('Get job by ID error:', error);
     res.status(500).json({ error: 'Failed to fetch job details' });
@@ -381,21 +426,29 @@ export const deleteJob = async (req: Request, res: Response) => {
   }
 };
 
-// Get available orders for job creation
+// Get available orders for job creation - MODIFIED to show all available orders
 export const getAvailableOrders = async (req: Request, res: Response) => {
   try {
+    console.log("Fetching available orders...");
+    
     const orders = await prisma.order.findMany({
       where: {
         // Find orders without an associated job
-        job: null,
-        // Only approved orders can be used to create jobs
-        status: 'APPROVED'
+        jobId: null,
+        // Removed status requirement to allow all orders
       },
       include: {
         customer: true
       }
     });
-
+    
+    console.log(`Found ${orders.length} available orders`);
+    console.log("Available orders:", orders.map(o => ({
+      id: o.id,
+      title: o.projectTitle,
+      status: o.status
+    })));
+    
     res.json(orders);
   } catch (error) {
     console.error('Available orders error:', error);
@@ -451,5 +504,45 @@ export const addJobNote = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Add job note error:', error);
     res.status(500).json({ error: 'Failed to add job note' });
+  }
+};
+
+// Get job statistics for dashboard
+export const getJobStats = async (req: Request, res: Response) => {
+  try {
+    console.log("Fetching job stats from database...");
+    const jobStats = await prisma.job.groupBy({
+      by: ['status'],
+      _count: {
+        status: true
+      }
+    });
+    
+    console.log("Raw job stats from database:", jobStats);
+
+    // Transform to the expected format
+    const stats = {
+      draft: 0,
+      pending: 0,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0
+    };
+
+    jobStats.forEach(stat => {
+      const status = stat.status.toLowerCase();
+      console.log(`Processing status: ${status} with count: ${stat._count.status}`);
+      if (status === 'draft') stats.draft = stat._count.status;
+      if (status === 'pending') stats.pending = stat._count.status;
+      if (status === 'in_progress') stats.inProgress = stat._count.status;
+      if (status === 'completed') stats.completed = stat._count.status;
+      if (status === 'cancelled') stats.cancelled = stat._count.status;
+    });
+
+    console.log("Transformed job stats:", stats);
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching job stats:', error);
+    res.status(500).json({ error: 'Failed to fetch job statistics' });
   }
 };

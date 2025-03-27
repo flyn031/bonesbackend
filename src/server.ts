@@ -12,6 +12,8 @@ import materialRoutes from './routes/materials';
 import inventoryRoutes from './routes/inventory';
 import dashboardRoutes from './routes/dashboard';
 import jobRoutes from './routes/jobs'; // Added job routes import
+import jobCostRoutes from './routes/jobCosts'; // Added job cost routes import
+import quotesRouter from './routes/quotes'; // Added quotes router import
 
 dotenv.config();
 const app = express();
@@ -53,6 +55,8 @@ app.use('/api/materials', materialRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/jobs', jobRoutes); // Added job routes configuration
+app.use('/api', jobCostRoutes); // Changed from '/api/job-costs' to '/api' to match the route paths
+app.use('/api/quotes', quotesRouter); // Added quotes router
 
 // Basic health check endpoint
 app.get('/health', async (req, res) => {

@@ -94,3 +94,152 @@ export const getCurrentRate = async (req: Request, res: Response, next: NextFunc
         next(error);
     }
 };
+
+// Financial metrics API endpoint
+export const getFinancialMetrics = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Get the date range from the query parameters, default to current month
+    const { 
+      startDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString(),
+      endDate = new Date().toISOString(),
+      compareWithPrevious = 'true'
+    } = req.query;
+
+    // Convert strings to Date objects
+    const startDateTime = new Date(startDate as string);
+    const endDateTime = new Date(endDate as string);
+    
+    // Get completed orders in the current period
+    const currentPeriodOrders = await prisma.order.findMany({
+      where: {
+        createdAt: {
+          gte: startDateTime,
+          lte: endDateTime
+        },
+        status: 'COMPLETED'
+      },
+      include: {
+        lineItems: true,
+        job: {
+          include: {
+            jobCosts: true
+          }
+        }
+      }
+    });
+    
+    // Calculate revenue, costs, and profit
+    let currentRevenue = 0;
+    let currentCosts = 0;
+    
+    currentPeriodOrders.forEach(order => {
+      // Calculate revenue from order line items
+      order.lineItems.forEach(item => {
+        currentRevenue += item.quantity * item.unitPrice;
+      });
+      
+      // Calculate costs from job costs
+      if (order.job) {
+        order.job.jobCosts.forEach(cost => {
+          currentCosts += cost.amount;
+        });
+      }
+    });
+    
+    const currentProfit = currentRevenue - currentCosts;
+    const currentProfitMargin = currentRevenue > 0 ? (currentProfit / currentRevenue) * 100 : 0;
+    
+    // Calculate monthly trends
+    const monthlyTrends = await getMonthlyFinancialData();
+    
+    // Prepare response
+    const response = {
+      currentPeriod: {
+        startDate: startDateTime,
+        endDate: endDateTime,
+        revenue: currentRevenue,
+        costs: currentCosts,
+        profit: currentProfit,
+        profitMargin: currentProfitMargin,
+        orderCount: currentPeriodOrders.length
+      },
+      previousPeriod: null,
+      monthlyTrends
+    };
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error getting financial metrics:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch financial metrics', 
+      details: error.message 
+    });
+  }
+};
+
+// Helper function to get monthly financial data
+const getMonthlyFinancialData = async () => {
+  // Get the last 12 months of data
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - 11);
+  startDate.setDate(1);
+  
+  const monthlyData = [];
+  
+  // For each month, calculate financial metrics
+  for (let i = 0; i < 12; i++) {
+    const monthStart = new Date(startDate);
+    monthStart.setMonth(monthStart.getMonth() + i);
+    
+    const monthEnd = new Date(monthStart);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+    monthEnd.setDate(0); // Last day of month
+    
+    // Get orders for this month
+    const orders = await prisma.order.findMany({
+      where: {
+        createdAt: {
+          gte: monthStart,
+          lte: monthEnd
+        },
+        status: 'COMPLETED'
+      },
+      include: {
+        lineItems: true,
+        job: {
+          include: {
+            jobCosts: true
+          }
+        }
+      }
+    });
+    
+    // Calculate metrics
+    let revenue = 0;
+    let costs = 0;
+    
+    orders.forEach(order => {
+      order.lineItems.forEach(item => {
+        revenue += item.quantity * item.unitPrice;
+      });
+      
+      if (order.job) {
+        order.job.jobCosts.forEach(cost => {
+          costs += cost.amount;
+        });
+      }
+    });
+    
+    const profit = revenue - costs;
+    
+    monthlyData.push({
+      month: monthStart.toLocaleString('default', { month: 'short' }),
+      year: monthStart.getFullYear(),
+      revenue,
+      costs,
+      profit
+    });
+  }
+  
+  return monthlyData;
+};

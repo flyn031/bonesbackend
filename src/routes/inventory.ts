@@ -6,7 +6,8 @@ import {
     getInventoryItemById,
     updateInventoryItem,
     getLowStockItems,
-    getInventoryStats
+    getInventoryStats,
+    getInventoryAlerts
 } from '../controllers/inventoryController';
 import { authenticateToken } from '../middleware/authMiddleware';
 
@@ -20,6 +21,7 @@ router.post('/', createInventoryItem);
 router.get('/', getInventoryItems);
 router.get('/stats', getInventoryStats);
 router.get('/low-stock', getLowStockItems);
+router.get('/alerts', getInventoryAlerts); // New alerts endpoint
 
 // Individual item routes
 router.get('/:id', getInventoryItemById);

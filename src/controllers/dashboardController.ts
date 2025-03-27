@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { CustomerHealthService } from '../services/customerHealthService';
+import { calculateCustomerHealth } from '../services/customerHealthService';
 
 const prisma = new PrismaClient();
-const customerHealthService = new CustomerHealthService();
+
 
 export const getDashboardData = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -205,7 +205,7 @@ export const getCustomerHealthDashboard = async (req: Request, res: Response): P
   try {
     console.log('Fetching customer health dashboard data...');
     
-    const healthScores = await customerHealthService.calculateHealthScores();
+    const healthScores = await calculateCustomerHealth();
 
     const dashboardData = {
       healthScores,

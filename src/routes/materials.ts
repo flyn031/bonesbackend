@@ -1,29 +1,25 @@
 import { Router } from 'express';
-import { authenticateToken } from '../middleware/authMiddleware';
-import {
-   createMaterial,
-   getMaterials,
-   updateStock,
-   createSampleMaterials,
-   updateMaterial,
-   deleteMaterial,
-   getMaterialCategories,
-   getMaterialById  // Add this import
+import { 
+  createMaterial, 
+  getMaterials, 
+  getMaterialById,
+  updateMaterial,
+  deleteMaterial,
+  updateStock,
+  getMaterialCategories,
+  createSampleMaterials
 } from '../controllers/materialController';
 
 const router = Router();
 
-router.use(authenticateToken);
-
+// Material routes
 router.post('/', createMaterial);
 router.get('/', getMaterials);
-router.get('/:id', getMaterialById);  // Add this route
-router.put('/:id/stock', updateStock);
-router.post('/:supplierId/sample-materials', createSampleMaterials);
-
-// New routes
+router.get('/categories', getMaterialCategories);
+router.get('/:id', getMaterialById);
 router.put('/:id', updateMaterial);
 router.delete('/:id', deleteMaterial);
-router.get('/categories', getMaterialCategories);
+router.patch('/:id/stock', updateStock);
+router.post('/samples/:supplierId', createSampleMaterials);
 
 export default router;

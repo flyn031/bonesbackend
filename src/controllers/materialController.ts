@@ -5,6 +5,9 @@ const prisma = new PrismaClient();
 
 export const createMaterial = async (req: Request, res: Response) => {
  try {
+   console.log('Request body:', req.body);  // Debug log
+
+   // Map frontend field names to backend expected names
    const { 
      name, 
      code, 
@@ -27,7 +30,9 @@ export const createMaterial = async (req: Request, res: Response) => {
    if (!name) validationErrors.push('Name is required');
    if (!code) validationErrors.push('Code is required');
    if (!unitPrice && unitPrice !== 0) validationErrors.push('Unit Price is required');
-   if (!supplierId && !customerId) validationErrors.push('Either Supplier or Customer is required');
+   
+   // Make supplier optional based on your form design
+   // if (!supplierId && !customerId) validationErrors.push('Either Supplier or Customer is required');
 
    if (validationErrors.length > 0) {
      return res.status(400).json({ 
@@ -36,30 +41,52 @@ export const createMaterial = async (req: Request, res: Response) => {
      });
    }
 
+   // Log what we're attempting to create
+   console.log('Attempting to create material with data:', {
+     name, code, description, category, unitPrice, unit,
+     minStockLevel, currentStockLevel, reorderPoint, leadTimeInDays,
+     supplierId, customerId
+   });
+
    const material = await prisma.material.create({
      data: {
        name,
        code,
        description,
        category,
-       unitPrice,
+       unitPrice: typeof unitPrice === 'string' ? parseFloat(unitPrice) : unitPrice,
        unit,
-       minStockLevel: minStockLevel || 0,
-       currentStockLevel: currentStockLevel || 0,
-       reorderPoint: reorderPoint || 0,
-       leadTimeInDays: leadTimeInDays || 0,
-       supplierId,
-       customerId,
-       manufacturer,
+       minStockLevel: minStockLevel ? (typeof minStockLevel === 'string' ? parseInt(minStockLevel) : minStockLevel) : 0,
+       currentStockLevel: currentStockLevel ? (typeof currentStockLevel === 'string' ? parseInt(currentStockLevel) : currentStockLevel) : 0,
+       reorderPoint: reorderPoint ? (typeof reorderPoint === 'string' ? parseInt(reorderPoint) : reorderPoint) : 0,
+       leadTimeInDays: leadTimeInDays ? (typeof leadTimeInDays === 'string' ? parseInt(leadTimeInDays) : leadTimeInDays) : 0,
+       supplierId: supplierId || undefined,
+       customerId: customerId || undefined,
+       manufacturer: manufacturer || undefined,
        productSpecifications: productSpecifications 
          ? JSON.stringify(productSpecifications) 
          : undefined
      }
    });
 
+   console.log('Material created successfully:', material);
    res.status(201).json(material);
  } catch (error) {
    console.error('Error creating material:', error);
+   
+   // Enhanced error handling with specific error types
+   if (error.code === 'P2002') {
+     return res.status(400).json({ 
+       error: 'Material with this code already exists', 
+       details: error.meta?.target || 'Duplicate field' 
+     });
+   } else if (error.code === 'P2003') {
+     return res.status(400).json({ 
+       error: 'Invalid foreign key reference', 
+       details: error.meta?.field_name || 'Invalid reference'
+     });
+   }
+   
    res.status(500).json({ 
      error: 'Failed to create material', 
      details: error instanceof Error ? error.message : 'Unknown error' 

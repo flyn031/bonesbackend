@@ -7,180 +7,170 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum MaterialCategory {
-  RAW_MATERIAL
-  MACHINE_PART
-  CONVEYOR_COMPONENT
-  OFFICE_SUPPLY
-  KITCHEN_SUPPLY
-  SAFETY_EQUIPMENT
-  CLEANING_SUPPLY
-  ELECTRICAL_COMPONENT
-  MECHANICAL_COMPONENT
-  OTHER
-}
-
-enum JobStatus {
-  ACTIVE     // New line to preserve existing status
-  DRAFT
-  PENDING
-  IN_PROGRESS
-  COMPLETED
-  CANCELED
-}
-
 model User {
-  id              String   @id @default(cuid())
-  email           String   @unique
-  name            String
-  password        String
-  role            Role     @default(USER)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  createdOrders   Order[]  @relation("CreatedBy")
-  managedOrders   Order[]  @relation("ProjectOwner")
-  
-  createdJobs     Job[]    @relation("JobCreator")
-  jobAssignments  UserJobAssignment[]
-  jobNotes        JobNote[]
+  id                        String              @id @default(cuid())
+  email                     String              @unique
+  name                      String
+  password                  String
+  role                      Role                @default(USER)
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  companyAddress            String?
+  companyEmail              String?
+  companyName               String?
+  companyPhone              String?
+  companyVatNumber          String?
+  companyWebsite            String?
+  companyLogo               String?             // Added field for company logo
+  useCompanyDetailsOnQuotes Boolean             @default(false)
+  createdBundles            ItemBundle[]        @relation("BundleCreator")
+  createdJobs               Job[]               @relation("JobCreator")
+  createdCosts              JobCost[]
+  jobNotes                  JobNote[]
+  createdOrders             Order[]             @relation("CreatedBy")
+  managedOrders             Order[]             @relation("ProjectOwner")
+  createdQuotes             Quote[]             @relation("QuoteCreator")
+  createdTemplates          QuoteTemplate[]     @relation("TemplateCreator")
+  jobAssignments            UserJobAssignment[]
 }
 
 model Job {
-  id              String    @id @default(cuid())
-  
-  // Basic Job Details
+  id              String              @id @default(cuid())
   title           String
   description     String?
-  status          JobStatus @default(DRAFT)
-  
-  // Relationships
-  customer        Customer  @relation(fields: [customerId], references: [id])
+  status          JobStatus           @default(DRAFT)
   customerId      String
-  
-  orders          Order[]
-  
-  // Tracking and Timing
   startDate       DateTime?
   expectedEndDate DateTime?
   actualEndDate   DateTime?
-  
-  // Resource Allocation
-  assignedUsers   UserJobAssignment[]
-  
-  // Materials and Resources
-  materialUsed    JobMaterial[]
-  
-  // Costing and Billing
   estimatedCost   Float?
   actualCost      Float?
-  
-  // Audit and Tracking
-  createdBy       User     @relation("JobCreator", fields: [createdById], references: [id])
   createdById     String
-  
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  totalCosts      Float?
+  createdBy       User                @relation("JobCreator", fields: [createdById], references: [id])
+  customer        Customer            @relation(fields: [customerId], references: [id])
+  costs           JobCost[]
+  materialUsed    JobMaterial[]
   notes           JobNote[]
-  
-  // Timestamps
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  orders          Order[]
+  assignedUsers   UserJobAssignment[]
+}
+
+model JobCost {
+  id            String          @id @default(cuid())
+  jobId         String
+  description   String
+  amount        Float
+  date          DateTime        @default(now())
+  category      JobCostCategory @default(OTHER)
+  invoiced      Boolean         @default(false)
+  materialId    String?
+  supplierId    String?
+  attachmentUrl String?
+  notes         String?
+  createdById   String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  createdBy     User            @relation(fields: [createdById], references: [id])
+  job           Job             @relation(fields: [jobId], references: [id])
+  material      Material?       @relation(fields: [materialId], references: [id])
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
 }
 
 model UserJobAssignment {
-  id            String   @id @default(cuid())
-  user          User     @relation(fields: [userId], references: [id])
-  userId        String
-  job           Job      @relation(fields: [jobId], references: [id])
-  jobId         String
-  role          String?
-  
-  assignedAt     DateTime @default(now())
-  completedAt    DateTime?
+  id          String    @id @default(cuid())
+  userId      String
+  jobId       String
+  role        String?
+  assignedAt  DateTime  @default(now())
+  completedAt DateTime?
+  job         Job       @relation(fields: [jobId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
 }
 
 model JobMaterial {
   id            String   @id @default(cuid())
-  job           Job      @relation(fields: [jobId], references: [id])
   jobId         String
-  material      Material @relation(fields: [materialId], references: [id])
   materialId    String
-  
   quantityUsed  Float
   estimatedCost Float?
   actualCost    Float?
-  
   usageNotes    String?
+  job           Job      @relation(fields: [jobId], references: [id])
+  material      Material @relation(fields: [materialId], references: [id])
 }
 
 model JobNote {
-  id          String   @id @default(cuid())
-  job         Job      @relation(fields: [jobId], references: [id])
-  jobId       String
-  
-  author      User     @relation(fields: [authorId], references: [id])
-  authorId    String
-  
-  content     String
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  jobId     String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+  author    User     @relation(fields: [authorId], references: [id])
+  job       Job      @relation(fields: [jobId], references: [id])
 }
 
 model Customer {
-  id           String     @id @default(cuid())
-  name         String
-  email        String?    @unique
-  phone        String?
-  address      String?
-  importSource String?
-  status       String?
-  totalOrders  Int        @default(0)
-  totalSpent   Float      @default(0)
-  lastOrderDate DateTime? 
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  orders       Order[]
-  materials    Material[]
-  jobs         Job[] 
+  id            String            @id @default(cuid())
+  name          String
+  email         String?           @unique
+  phone         String?
+  address       String?
+  importSource  String?
+  status        String?
+  totalOrders   Int               @default(0)
+  totalSpent    Float             @default(0)
+  lastOrderDate DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  customPricing CustomerPricing[]
+  jobs          Job[]
+  materials     Material[]
+  orders        Order[]
+  quotes        Quote[]
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  projectTitle    String
-  quoteRef        String      @unique
-  orderType       OrderType   @default(CUSTOMER_LINKED)
-  status          OrderStatus @default(DRAFT)
-  customerName    String
-  contactPerson   String
-  contactPhone    String
-  contactEmail    String
-  projectValue    Float
-  marginPercent   Float
-  leadTimeWeeks   Int
-  items           Json
-  costBreakdown   Json?
-  paymentTerms    PaymentTerms @default(THIRTY_DAYS)
+  id                 String             @id @default(cuid())
+  projectTitle       String
+  quoteRef           String             @unique
+  orderType          OrderType          @default(CUSTOMER_LINKED)
+  status             OrderStatus        @default(DRAFT)
+  customerName       String
+  contactPerson      String
+  contactPhone       String
+  contactEmail       String
+  projectValue       Float
+  marginPercent      Float
+  leadTimeWeeks      Int
+  items              Json
+  costBreakdown      Json?
+  paymentTerms       PaymentTerms       @default(THIRTY_DAYS)
   customPaymentTerms String?
-  currency        String      @default("GBP")
-  exchangeRate    Float?
-  vatRate         Float?
-  subTotal        Float       @default(0)
-  totalTax        Float       @default(0)
-  totalAmount     Float       @default(0)
-  profitMargin    Float       @default(0)
-  discounts       Json?
-  paymentSchedule Json?
-  budgetAllocations Json?
-  notes           String?
-  customer        Customer?   @relation(fields: [customerId], references: [id])
-  customerId      String?
-  job             Job?        @relation(fields: [jobId], references: [id])
-  jobId           String?
-  projectOwner    User        @relation("ProjectOwner", fields: [projectOwnerId], references: [id])
-  projectOwnerId  String
-  createdBy       User        @relation("CreatedBy", fields: [createdById], references: [id])
-  createdById     String
-  paymentMilestones PaymentMilestone[]
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  currency           String             @default("GBP")
+  exchangeRate       Float?
+  vatRate            Float?
+  subTotal           Float              @default(0)
+  totalTax           Float              @default(0)
+  totalAmount        Float              @default(0)
+  profitMargin       Float              @default(0)
+  discounts          Json?
+  paymentSchedule    Json?
+  budgetAllocations  Json?
+  notes              String?
+  customerId         String?
+  jobId              String?
+  projectOwnerId     String
+  createdById        String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  createdBy          User               @relation("CreatedBy", fields: [createdById], references: [id])
+  customer           Customer?          @relation(fields: [customerId], references: [id])
+  job                Job?               @relation(fields: [jobId], references: [id])
+  projectOwner       User               @relation("ProjectOwner", fields: [projectOwnerId], references: [id])
+  paymentMilestones  PaymentMilestone[]
 }
 
 model ImportLog {
@@ -216,7 +206,6 @@ model CurrencyRate {
 
 model PaymentMilestone {
   id          String          @id @default(cuid())
-  order       Order           @relation(fields: [orderId], references: [id])
   orderId     String
   description String
   amount      Float
@@ -225,48 +214,210 @@ model PaymentMilestone {
   paidDate    DateTime?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  order       Order           @relation(fields: [orderId], references: [id])
 }
 
 model Supplier {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  phone         String?
-  address       String?
-  rating        Float?
-  status        SupplierStatus @default(ACTIVE)
-  notes         String?
-  totalOrders   Int       @default(0)
-  completedOrders Int     @default(0)
-  averageDeliveryTime Float @default(0)
-  lastOrderDate DateTime?
-  materials     Material[]
-  performanceHistory Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                  String         @id @default(cuid())
+  name                String
+  email               String         @unique
+  phone               String?
+  address             String?
+  rating              Float?
+  status              SupplierStatus @default(ACTIVE)
+  notes               String?
+  totalOrders         Int            @default(0)
+  completedOrders     Int            @default(0)
+  averageDeliveryTime Float          @default(0)
+  lastOrderDate       DateTime?
+  performanceHistory  Json?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  costs               JobCost[]
+  materials           Material[]
 }
 
 model Material {
-  id                String           @id @default(cuid())
-  code              String           @unique
-  name              String
-  description       String?
-  category          MaterialCategory @default(OTHER)
-  unitPrice         Float
-  unit              String
-  minStockLevel     Int              @default(0)
-  currentStockLevel Int              @default(0)
-  reorderPoint      Int              @default(0)
-  leadTimeInDays    Int              @default(0)
-  manufacturer      String?
+  id                    String              @id @default(cuid())
+  code                  String              @unique
+  name                  String
+  description           String?
+  category              MaterialCategory    @default(OTHER)
+  unitPrice             Float
+  unit                  String
+  minStockLevel         Int                 @default(0)
+  currentStockLevel     Int                 @default(0)
+  reorderPoint          Int                 @default(0)
+  leadTimeInDays        Int                 @default(0)
+  manufacturer          String?
   productSpecifications Json?
-  supplier          Supplier?        @relation(fields: [supplierId], references: [id])
-  supplierId        String?
-  customer          Customer?        @relation(fields: [customerId], references: [id])
-  customerId        String?
-  jobMaterials      JobMaterial[]
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  supplierId            String?
+  customerId            String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  bundleItems           BundleItem[]
+  customerPricing       CustomerPricing[]
+  costs                 JobCost[]
+  jobMaterials          JobMaterial[]
+  customer              Customer?           @relation(fields: [customerId], references: [id])
+  supplier              Supplier?           @relation(fields: [supplierId], references: [id])
+  priceHistory          PriceHistory[]
+  quoteLineItems        QuoteLineItem[]
+  quoteTemplateItems    QuoteTemplateItem[]
+}
+
+model QuoteTemplate {
+  id          String              @id @default(cuid())
+  name        String
+  description String?
+  createdById String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   User                @relation("TemplateCreator", fields: [createdById], references: [id])
+  items       QuoteTemplateItem[]
+}
+
+model QuoteTemplateItem {
+  id               String        @id @default(cuid())
+  description      String
+  quantity         Float         @default(1)
+  unitPrice        Float
+  materialId       String?
+  templateId       String
+  isFrequentlyUsed Boolean       @default(false)
+  material         Material?     @relation(fields: [materialId], references: [id])
+  template         QuoteTemplate @relation(fields: [templateId], references: [id])
+}
+
+model ItemBundle {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  discount    Float        @default(0)
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  items       BundleItem[]
+  createdBy   User         @relation("BundleCreator", fields: [createdById], references: [id])
+}
+
+model BundleItem {
+  id         String     @id @default(cuid())
+  bundleId   String
+  materialId String
+  quantity   Float      @default(1)
+  unitPrice  Float
+  bundle     ItemBundle @relation(fields: [bundleId], references: [id])
+  material   Material   @relation(fields: [materialId], references: [id])
+}
+
+model CustomerPricing {
+  id                 String    @id @default(cuid())
+  customerId         String
+  materialId         String
+  unitPrice          Float?
+  discountPercentage Float?
+  notes              String?
+  validFrom          DateTime  @default(now())
+  validUntil         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  customer           Customer  @relation(fields: [customerId], references: [id])
+  material           Material  @relation(fields: [materialId], references: [id])
+}
+
+model PriceHistory {
+  id            String    @id @default(cuid())
+  materialId    String
+  unitPrice     Float
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  reason        String?
+  createdBy     String
+  createdAt     DateTime  @default(now())
+  material      Material  @relation(fields: [materialId], references: [id])
+}
+
+model Quote {
+  id                String          @id @default(cuid())
+  customerId        String
+  title             String
+  description       String?
+  status            QuoteStatus     @default(DRAFT)
+  totalAmount       Float?
+  validUntil        DateTime?
+  createdById       String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  customerReference String?
+  quoteNumber       String?         @unique
+  contactEmail      String?
+  contactPerson     String?
+  contactPhone      String?
+  createdBy         User            @relation("QuoteCreator", fields: [createdById], references: [id])
+  customer          Customer        @relation(fields: [customerId], references: [id])
+  lineItems         QuoteLineItem[]
+}
+
+model QuoteLineItem {
+  id          String    @id @default(cuid())
+  quoteId     String
+  description String
+  quantity    Float
+  unitPrice   Float
+  materialId  String?
+  material    Material? @relation(fields: [materialId], references: [id])
+  quote       Quote     @relation(fields: [quoteId], references: [id])
+}
+
+model CompanySettings {
+  id                String   @id @default(cuid())
+  quoteNumberPrefix String   @default("Q")
+  quoteNumberFormat String   @default("{PREFIX}-{YEAR}-{SEQ}")
+  lastQuoteNumber   Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+enum MaterialCategory {
+  RAW_MATERIAL
+  MACHINE_PART
+  CONVEYOR_COMPONENT
+  OFFICE_SUPPLY
+  KITCHEN_SUPPLY
+  SAFETY_EQUIPMENT
+  CLEANING_SUPPLY
+  ELECTRICAL_COMPONENT
+  MECHANICAL_COMPONENT
+  OTHER
+}
+
+enum JobStatus {
+  ACTIVE
+  DRAFT
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+enum JobCostCategory {
+  MATERIALS
+  LABOR
+  EQUIPMENT
+  SUBCONTRACTOR
+  ADMINISTRATIVE
+  TRAVEL
+  OTHER
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  APPROVED
+  DECLINED
+  EXPIRED
+  CONVERTED
 }
 
 enum SupplierStatus {
