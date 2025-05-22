@@ -17,7 +17,8 @@ export class MaterialService {
         unit: 'meter',
         minStock: 100,
         currentStock: 500,
-        supplierId: supplierId
+        supplierId: supplierId,
+        code: 'SP-001' // Added required code field
       },
       {
         name: 'Aluminum Sheet',
@@ -26,7 +27,8 @@ export class MaterialService {
         unit: 'square meter',
         minStock: 50,
         currentStock: 250,
-        supplierId: supplierId
+        supplierId: supplierId,
+        code: 'AS-001' // Added required code field
       },
       {
         name: 'Copper Wire',
@@ -35,7 +37,8 @@ export class MaterialService {
         unit: 'kg',
         minStock: 200,
         currentStock: 1000,
-        supplierId: supplierId
+        supplierId: supplierId,
+        code: 'CW-001' // Added required code field
       }
     ];
 

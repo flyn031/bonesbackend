@@ -1,5 +1,27 @@
+// backend/src/services/jobService.ts
 import prisma from '../utils/prismaClient';
 import dayjs from 'dayjs';
+import { JobStatus, Prisma, Job, Material } from '@prisma/client'; // Import needed types
+
+// Define types for included relations to help TypeScript
+type JobWithRelations = Prisma.JobGetPayload<{
+  include: {
+    orders: true;
+    materials: { include: { material: true } }; // Correct relation is 'materials' not 'materialUsed'
+    customer: true;
+    history: true; // Correct relation is 'history' not 'jobHistory'
+  };
+}>;
+
+// Extend Material type for the include in recommendResourceAllocation
+type MaterialWithStock = Prisma.MaterialGetPayload<{
+  select: {
+    id: true;
+    name: true;
+    currentStock: true; // Correct field name is currentStock
+    reorderPoint: true;
+  }
+}>;
 
 export class JobService {
   // Calculate job performance metrics
@@ -8,7 +30,10 @@ export class JobService {
       where: { id: jobId },
       include: {
         orders: true,
-        materialUsed: true
+        materials: { // Correct field is 'materials' not 'materialUsed'
+          include: { material: true }
+        },
+        history: true, // Correct field is 'history' not 'jobHistory'
       }
     });
 
@@ -16,18 +41,24 @@ export class JobService {
       throw new Error('Job not found');
     }
 
+    // Derive actualEndDate from history if not directly on job
+    const actualEndDateEntry = job.history?.find(h => h.status === JobStatus.COMPLETED.toString());
+    const actualEndDate = actualEndDateEntry ? dayjs(actualEndDateEntry.createdAt) : dayjs(); // Use createdAt of completed status
+
     // Calculate actual vs estimated duration
     const startDate = job.startDate ? dayjs(job.startDate) : null;
-    const endDate = job.actualEndDate ? dayjs(job.actualEndDate) : dayjs();
-    const estimatedDuration = job.expectedEndDate 
+    const endDate = actualEndDate; // Use the derived actualEndDate
+    const estimatedDuration = job.expectedEndDate && startDate
       ? dayjs(job.expectedEndDate).diff(startDate, 'hour')
       : 0;
     const actualDuration = startDate ? endDate.diff(startDate, 'hour') : 0;
 
     // Calculate material usage efficiency
-    const materialCosts = job.materialUsed.reduce((total, material) => {
-      return total + (material.actualCost || material.estimatedCost || 0);
-    }, 0);
+    // Explicitly typing the reducer parameters
+    const materialCosts = job.materials?.reduce((total: number, materialUsage) => {
+      // Safely access actual or estimated cost with optional chaining
+      return total + (materialUsage.totalCost || 0);
+    }, 0) || 0;
 
     return {
       jobId: job.id,
@@ -39,11 +70,11 @@ export class JobService {
       },
       materials: {
         totalCost: materialCosts,
-        itemsUsed: job.materialUsed.length
+        itemsUsed: job.materials?.length || 0
       },
       performance: {
-        durationVariancePercentage: estimatedDuration 
-          ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100 
+        durationVariancePercentage: estimatedDuration
+          ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100
           : 0,
         isBehindSchedule: actualDuration > estimatedDuration
       }
@@ -57,26 +88,22 @@ export class JobService {
       include: {
         customer: true,
         orders: true,
-        assignedUsers: {
-          include: {
-            user: true
-          }
-        },
-        materialUsed: {
+        materials: { // Correct relation is 'materials'
           include: {
             material: true
           }
         },
-        notes: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
+        history: true, // Correct relation is 'history'
       }
     });
 
     if (!job) {
       throw new Error('Job not found');
     }
+
+    // Derive actualEndDate from history if available
+    const actualEndDateEntry = job.history?.find(h => h.status === JobStatus.COMPLETED.toString());
+    const actualEndDate = actualEndDateEntry ? actualEndDateEntry.createdAt : null;
 
     return {
       jobDetails: {
@@ -86,45 +113,39 @@ export class JobService {
         status: job.status,
         startDate: job.startDate,
         expectedEndDate: job.expectedEndDate,
-        actualEndDate: job.actualEndDate
+        actualEndDate: actualEndDate
       },
       customer: {
-        id: job.customer.id,
-        name: job.customer.name
+        id: job.customer?.id || '',
+        name: job.customer?.name || 'Unknown Customer'
       },
-      order: {
-        id: job.orders[0]?.id,
-        projectTitle: job.orders[0]?.projectTitle
-      },
-      assignedTeam: job.assignedUsers.map(assignment => ({
-        id: assignment.user.id,
-        name: assignment.user.name
-      })),
-      materials: job.materialUsed.map(materialUsage => ({
-        materialId: materialUsage.material.id,
-        materialName: materialUsage.material.name,
-        quantityUsed: materialUsage.quantityUsed,
-        estimatedCost: materialUsage.estimatedCost,
-        actualCost: materialUsage.actualCost
-      })),
-      recentNotes: job.notes.map(note => ({
-        content: note.content,
-        createdAt: note.createdAt,
-        authorName: note.authorId // You might want to include author details
-      })),
+      order: job.orders && job.orders.length > 0 ? {
+        id: job.orders[0].id,
+        projectTitle: job.orders[0].projectTitle
+      } : undefined,
+      assignedTeam: [], // You may need to implement this based on your business logic
+      materials: job.materials?.map((materialUsage) => ({
+        materialId: materialUsage.material?.id || '',
+        materialName: materialUsage.material?.name || 'Unknown Material',
+        quantityNeeded: materialUsage.quantityNeeded ?? 0,
+        quantityUsed: materialUsage.quantityUsed ?? 0,
+        estimatedCost: (materialUsage.unitCost ?? 0) * (materialUsage.quantityNeeded ?? 0),
+        actualCost: materialUsage.totalCost ?? 0
+      })) || [],
+      recentNotes: [], // You may need to implement this based on your business logic
       progressSummary: await this.getJobPerformanceMetrics(jobId)
     };
   }
 
-  // Find jobs at risk of delay - Fixed to avoid totalCosts issue
+  // Find jobs at risk of delay
   async findJobsAtRisk(daysThreshold: number = 7) {
     try {
       const now = new Date();
-      
+
       const atRiskJobs = await prisma.job.findMany({
         where: {
           status: {
-            in: ['PENDING', 'IN_PROGRESS']
+            in: [JobStatus.PENDING, JobStatus.IN_PROGRESS] // Use valid JobStatus enum values
           },
           expectedEndDate: {
             lte: new Date(now.getTime() + daysThreshold * 24 * 60 * 60 * 1000)
@@ -133,24 +154,27 @@ export class JobService {
         include: {
           customer: true,
           orders: true,
-          assignedUsers: {
-            include: {
-              user: true
-            }
-          }
+          history: true, // Correct relation is 'history'
         }
       });
 
-      return atRiskJobs.map(job => ({
-        id: job.id,
-        title: job.title,
-        status: job.status,
-        expectedEndDate: job.expectedEndDate,
-        customer: job.customer.name,
-        assignedUsers: job.assignedUsers.map(a => a.user.name),
-        projectTitle: job.orders[0]?.projectTitle,
-        totalCosts: 0 // Add the totalCosts field manually
-      }));
+      return atRiskJobs.map(job => {
+        // Derive actualEndDate from history if available
+        const actualEndDateEntry = job.history?.find(h => h.status === JobStatus.COMPLETED.toString());
+        const actualEndDate = actualEndDateEntry ? actualEndDateEntry.createdAt : null;
+
+        return {
+          id: job.id,
+          title: job.title,
+          status: job.status,
+          expectedEndDate: job.expectedEndDate,
+          actualEndDate: actualEndDate,
+          customer: job.customer?.name || 'Unknown Customer',
+          assignedUsers: [], // You may need to implement this based on your business logic
+          projectTitle: job.orders && job.orders.length > 0 ? job.orders[0].projectTitle : undefined,
+          totalCosts: 0 // If totalCosts is calculated, it should be done here or in a separate function
+        };
+      });
     } catch (error) {
       console.error('Error finding at-risk jobs:', error);
       return []; // Return empty array as fallback
@@ -162,7 +186,7 @@ export class JobService {
     const job = await prisma.job.findUnique({
       where: { id: jobId },
       include: {
-        materialUsed: {
+        materials: { // Correct relation is 'materials'
           include: {
             material: true
           }
@@ -175,15 +199,19 @@ export class JobService {
     }
 
     // Simple resource recommendation based on material needs
-    const resourceRecommendations = job.materialUsed.map(usage => ({
-      materialId: usage.material.id,
-      materialName: usage.material.name,
-      quantityNeeded: usage.quantityUsed,
-      recommendedStockAction: 
-        usage.material.currentStockLevel < usage.quantityUsed 
-          ? 'URGENT_REORDER' 
-          : 'SUFFICIENT_STOCK'
-    }));
+    const resourceRecommendations = job.materials?.map((usage) => {
+      const material = usage.material;
+      return {
+        materialId: material?.id || '',
+        materialName: material?.name || '',
+        quantityNeeded: usage.quantityNeeded ?? 0,
+        recommendedStockAction:
+          material && material.currentStock !== undefined && material.reorderPoint !== undefined && 
+          material.currentStock < (material.reorderPoint || 0)
+            ? 'URGENT_REORDER'
+            : 'SUFFICIENT_STOCK'
+      };
+    }) || [];
 
     return {
       jobId: job.id,

@@ -24,9 +24,10 @@ export const generateQuotePDF = async (order: Order): Promise<Buffer> => {
     // Client Information
     doc.text('To:');
     doc.text(order.customerName);
-    doc.text(order.contactPerson);
-    doc.text(order.contactEmail);
-    doc.text(order.contactPhone);
+    // Applying nullish coalescing operator (?? '') to handle potential null values
+    doc.text(order.contactPerson ?? ''); // Fix: Provide empty string if null
+    doc.text(order.contactEmail ?? ''); // Fix: Provide empty string if null
+    doc.text(order.contactPhone ?? ''); // Fix: Provide empty string if null
     doc.moveDown();
 
     // Project Details
@@ -37,10 +38,11 @@ export const generateQuotePDF = async (order: Order): Promise<Buffer> => {
 
     // Items Table
     doc.fontSize(12).text('Items', { underline: true });
-    const items = order.items as any[];
+    const items = order.items as any[]; // Cast to any[] if Prisma type for `items` isn't an array of objects directly
     items.forEach(item => {
-        doc.fontSize(10).text(`${item.description}`);
-        doc.text(`Quantity: ${item.quantity}    Price: £${item.price.toFixed(2)}`, { align: 'right' });
+        // Ensure item.description, item.quantity, item.price are handled for potential null/undefined if necessary
+        doc.fontSize(10).text(`${item.description ?? ''}`); // Example for description
+        doc.text(`Quantity: ${item.quantity ?? 0}    Price: £${(item.price ?? 0).toFixed(2)}`, { align: 'right' });
         doc.moveDown(0.5);
     });
 
@@ -48,7 +50,7 @@ export const generateQuotePDF = async (order: Order): Promise<Buffer> => {
     doc.moveDown();
     doc.fontSize(12).text('Financial Summary', { underline: true });
     doc.fontSize(10).text(`Sub Total: £${order.subTotal.toFixed(2)}`, { align: 'right' });
-    if (order.vatRate) {
+    if (order.vatRate) { // Check if vatRate exists
         doc.text(`VAT (${order.vatRate}%): £${order.totalTax.toFixed(2)}`, { align: 'right' });
     }
     doc.fontSize(12).text(`Total Amount: £${order.totalAmount.toFixed(2)}`, { align: 'right' });
@@ -56,11 +58,12 @@ export const generateQuotePDF = async (order: Order): Promise<Buffer> => {
 
     // Payment Terms
     doc.fontSize(12).text('Payment Terms', { underline: true });
-    doc.fontSize(10).text(`Terms: ${order.paymentTerms}`);
+    doc.fontSize(10).text(`Terms: ${order.paymentTerms ?? ''}`); // Handle potential null for paymentTerms
     if (order.paymentSchedule) {
-        const schedule = order.paymentSchedule as any;
+        // This cast might be necessary if paymentSchedule is JsonValue or a generic object
+        const schedule = order.paymentSchedule as Record<string, number>; 
         Object.entries(schedule).forEach(([stage, amount]) => {
-            doc.text(`${stage}: £${(amount as number).toFixed(2)}`);
+            doc.text(`${stage}: £${(amount as number).toFixed(2)}`); // Ensure amount is treated as number
         });
     }
 

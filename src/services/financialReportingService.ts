@@ -33,16 +33,18 @@ export class FinancialReportingService {
       return suppliers.map(supplier => {
         // Calculate material-related metrics
         const materialCount = supplier.materials.length;
+        // Fixed: changed currentStockLevel to currentStock
         const totalMaterialCost = supplier.materials.reduce((sum, material) => 
-          sum + (material.unitPrice * material.currentStockLevel), 0);
+          sum + (material.unitPrice * material.currentStock), 0);
         
         const averageMaterialPrice = materialCount > 0 
           ? totalMaterialCost / materialCount 
           : 0;
 
         // Simulate potential revenue based on materials
+        // Fixed: changed currentStockLevel to currentStock
         const potentialRevenue = supplier.materials.reduce((sum, material) => 
-          sum + (material.unitPrice * material.currentStockLevel * 1.5), 0); // 50% markup
+          sum + (material.unitPrice * material.currentStock * 1.5), 0); // 50% markup
 
         return {
           supplierId: supplier.id,
@@ -119,13 +121,14 @@ export class FinancialReportingService {
             id: true,
             name: true,
             unitPrice: true,
-            currentStockLevel: true
+            currentStock: true // Fixed: changed currentStockLevel to currentStock
           }
         });
         
         // Calculate raw material costs
+        // Fixed: changed currentStockLevel to currentStock
         rawMaterialCost = materials.reduce(
-          (sum, material) => sum + (material.unitPrice * material.currentStockLevel), 
+          (sum, material) => sum + (material.unitPrice * material.currentStock), 
           0
         );
         

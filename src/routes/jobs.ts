@@ -1,176 +1,205 @@
-import { Router } from 'express';
+// backend/src/routes/jobs.ts
+
+import { Router, Request, Response, NextFunction } from 'express';
+import { Prisma } from '@prisma/client';
 import prisma from '../utils/prismaClient';
-import { 
-  createJob, 
-  updateJob, 
-  getJobs, 
-  getJobById, 
+import jobService from '../services/jobService';
+
+// ADD AUDIT MIDDLEWARE IMPORT
+import { auditJobMiddleware } from '../middleware/auditMiddleware';
+
+// Import authentication middleware directly
+// Assuming authorizeRole is the correct export for role-based authorization
+// This import is correct, assuming authorizeRole is a named export in authMiddleware.ts
+import { authenticateToken, authorizeRole } from '../middleware/authMiddleware';
+
+// Import job controllers directly
+import {
+  createJob,
+  updateJob,
+  getJobs,
+  getJobById,
   deleteJob,
   getAvailableOrders,
   getAvailableUsers,
-  addJobNote,
-  getJobStats
+  getJobStats,
 } from '../controllers/jobController';
-import { authenticateToken } from '../middleware/authMiddleware';
-import jobService from '../services/jobService';
+
+// Define AuthRequest interface for type safety
+// Assuming 'role' will always be a string when authenticated via the token
+interface UserPayload {
+  id: string;
+  role: string;
+  [key: string]: any;
+}
+
+// Extend the Request type to include the 'user' property from AuthRequest
+// This ensures that `req.user` is correctly typed when used within controllers.
+interface AuthRequest extends Request {
+  user?: UserPayload;
+}
 
 const router = Router();
+
+// Utility to wrap async functions to catch errors and pass to Express error handling
+// Ensure that the 'req' parameter passed to fn is `AuthRequest` for type safety
+const asyncHandler = (fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<any>) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    // Cast req to AuthRequest inside asyncHandler to ensure proper typing for the wrapped function
+    Promise.resolve(fn(req as AuthRequest, res, next)).catch(next);
+  };
 
 // Protect all job routes with authentication
 router.use(authenticateToken);
 
-// IMPORTANT: The at-risk endpoint needs to be placed BEFORE the /:id pattern
-// otherwise Express will treat "at-risk" as an ID parameter
-router.get('/at-risk', async (req, res) => {
-  try {
-    const daysThreshold = req.query.days ? Number(req.query.days) : 7;
-    const atRiskJobs = await jobService.findJobsAtRisk(daysThreshold);
-    res.json(atRiskJobs);
-  } catch (error) {
-    console.error('At-risk jobs error:', error);
-    res.status(500).json({ error: 'Failed to fetch at-risk jobs' });
+// IMPORTANT: Specific string routes like '/at-risk', '/stats' must come BEFORE routes with parameters like '/:id'
+router.get('/stats', asyncHandler(getJobStats));
+router.get('/available-orders', asyncHandler(getAvailableOrders));
+router.get('/available-users', asyncHandler(getAvailableUsers));
+
+router.get('/at-risk', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const daysThreshold = req.query.days ? Number(req.query.days) : 7;
+
+  // Type assertion for jobService methods to ensure TS knows they exist (if they truly should)
+  // This assumes jobService will have these methods. If not, you need to add them.
+  if (typeof jobService.findJobsAtRisk !== 'function') {
+    // It's better to type jobService directly or ensure it has these methods.
+    // For now, keeping the runtime check as a safeguard.
+    return res.status(500).json({
+      error: 'Service not available',
+      message: 'findJobsAtRisk method not implemented in jobService'
+    });
   }
-});
 
-// Available resources endpoints also need to be before the /:id pattern
-router.get('/available-orders', getAvailableOrders);
-router.get('/available-users', getAvailableUsers);
-router.get('/stats', getJobStats);
+  const atRiskJobs = await jobService.findJobsAtRisk(daysThreshold);
+  return res.json(atRiskJobs);
+}));
 
-// Job Creation
-router.post('/', createJob);
+// Job CRUD Operations - ADD AUDIT MIDDLEWARE
+router.post('/', auditJobMiddleware('CREATE'), asyncHandler(createJob));
 
-// Job Retrieval
-router.get('/', getJobs);
-router.get('/:id', getJobById);
+// GET routes don't need auditing - they don't change data
+router.get('/', asyncHandler(getJobs));
+router.get('/:id', asyncHandler(getJobById));
 
-// Job Updates
-router.patch('/:id', updateJob);
+// UPDATE routes - ADD AUDIT MIDDLEWARE
+router.patch('/:id', auditJobMiddleware('UPDATE'), asyncHandler(updateJob));
 
-// Job Deletion
-router.delete('/:id', deleteJob);
-
-// Job Notes
-router.post('/:id/notes', addJobNote);
+// DELETE route - ADD AUDIT MIDDLEWARE
+// Using authorizeRole for admin permissions, as per typical setup
+router.delete('/:id', authorizeRole(['admin', 'super_admin']), auditJobMiddleware('DELETE'), asyncHandler(deleteJob));
 
 // Job Costs endpoints
-router.get('/:jobId/costs', async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    console.log(`Fetching costs for job ${jobId}`);
-    
-    // First check if the job exists
-    const job = await prisma.job.findUnique({
-      where: { id: jobId }
-    });
-    
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-    
-    // Now fetch the costs
-    const jobCosts = await prisma.jobCost.findMany({
-      where: { jobId: jobId },
-      include: {
-        material: true,
-        supplier: true,
-        createdBy: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
-    });
-    
-    console.log(`Found ${jobCosts.length} costs for job ${jobId}`);
-    res.json(jobCosts);
-  } catch (error) {
-    console.error('Error fetching job costs:', error);
-    console.error('Error details:', error.stack);
-    res.status(500).json({ 
-      error: 'Failed to fetch job costs', 
-      details: error.message 
-    });
-  }
-});
+router.get('/:jobId/costs', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { jobId } = req.params;
 
-// POST - Add a new job cost with proper relation handling
-router.post('/:jobId/costs', async (req, res) => {
+  const job = await prisma.job.findUnique({ where: { id: jobId } });
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  const jobCosts = await prisma.jobCost.findMany({
+    where: { jobId: jobId },
+    include: {
+      // Add includes based on your schema relationships (uncomment and adjust as needed)
+      // material: true,
+      // supplier: true,
+      // createdBy: { select: { id: true, name: true } }
+    },
+    orderBy: { costDate: 'desc' }
+  });
+
+  return res.json(jobCosts);
+}));
+
+// ADD AUDIT for cost creation
+router.post('/:jobId/costs', auditJobMiddleware('COST_ADDED'), asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { jobId } = req.params;
+  const { description, amount, category, date } = req.body;
+  const userId = req.user?.id; // Access user from AuthRequest
+
+  if (!userId) {
+    // Use res.status().json() and return for early exit
+    res.status(401).json({ error: 'Unauthorized: User ID not found in token.' });
+    return;
+  }
+  if (!description || amount === undefined || amount === null) {
+    res.status(400).json({ error: 'Description and amount are required for job cost' });
+    return;
+  }
+
+  const parsedAmount = parseFloat(amount);
+  if (isNaN(parsedAmount)) {
+    res.status(400).json({ error: 'Invalid amount format for job cost' });
+    return;
+  }
+
   try {
-    const { jobId } = req.params;
-    const { description, amount, category, date, materialId, supplierId, notes } = req.body;
-    
-    // Validation
-    if (!description || amount === undefined) {
-      return res.status(400).json({ error: 'Description and amount are required' });
-    }
-    
-    // Create the job cost with all required relations
     const jobCost = await prisma.jobCost.create({
       data: {
         description,
-        amount: parseFloat(amount),
-        category: category || 'OTHER',
-        date: date ? new Date(date) : new Date(),
+        amount: parsedAmount,
+        category: category || null, // Ensure category is null if not provided, not undefined
+        costDate: date ? new Date(date) : new Date(),
         job: { connect: { id: jobId } },
-        createdBy: { connect: { id: req.user.id } },
-        ...(materialId && { material: { connect: { id: materialId } } }),
-        ...(supplierId && { supplier: { connect: { id: supplierId } } }),
-        notes
+        // Add other fields based on your schema (uncomment and adjust as needed)
+        // createdBy: { connect: { id: userId } },
       },
-      include: {
-        material: true,
-        supplier: true,
-        createdBy: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      }
+      // include: { material: true, supplier: true, createdBy: { select: { id: true, name: true } } }
     });
-    
-    res.status(201).json(jobCost);
-  } catch (error) {
-    console.error('Error creating job cost:', error);
-    console.error('Error details:', error.stack);
-    res.status(500).json({ 
-      error: 'Failed to create job cost', 
-      details: error.message 
+
+    res.status(201).json(jobCost); // Removed 'return'
+  } catch (error: any) { // Explicitly type error as any for safer access to .message
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      res.status(400).json({ message: `Failed to create job cost: Invalid Job ID or other related ID. Field: ${error.meta?.field_name}` });
+      return;
+    }
+    console.error(`Error creating job cost for job ${req.params.jobId}:`, error.message);
+    res.status(500).json({ error: 'Failed to create job cost', details: error.message });
+  }
+}));
+
+// Job Performance Metrics & Other Custom Routes
+router.get('/:id/performance-metrics', asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Assuming jobService.getJobPerformanceMetrics is a function
+  if (typeof jobService.getJobPerformanceMetrics !== 'function') {
+    res.status(500).json({ // Removed 'return' here
+      error: 'Service not available',
+      message: 'getJobPerformanceMetrics method not implemented in jobService'
     });
+    return; // Added return for early exit
   }
-});
 
-// Job Performance Metrics
-router.get('/:id/performance-metrics', async (req, res) => {
-  try {
-    const metrics = await jobService.getJobPerformanceMetrics(req.params.id);
-    res.json(metrics);
-  } catch (error) {
-    console.error('Performance metrics error:', error);
-    res.status(500).json({ error: 'Failed to fetch performance metrics' });
-  }
-});
+  const metrics = await jobService.getJobPerformanceMetrics(req.params.id);
+  res.json(metrics); // Removed 'return'
+}));
 
-router.get('/:id/progress-report', async (req, res) => {
-  try {
-    const report = await jobService.generateJobProgressReport(req.params.id);
-    res.json(report);
-  } catch (error) {
-    console.error('Progress report error:', error);
-    res.status(500).json({ error: 'Failed to generate progress report' });
+router.get('/:id/progress-report', asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Assuming jobService.generateJobProgressReport is a function
+  if (typeof jobService.generateJobProgressReport !== 'function') {
+    res.status(500).json({ // Removed 'return' here
+      error: 'Service not available',
+      message: 'generateJobProgressReport method not implemented in jobService'
+    });
+    return; // Added return for early exit
   }
-});
 
-router.get('/:id/resource-recommendations', async (req, res) => {
-  try {
-    const recommendations = await jobService.recommendResourceAllocation(req.params.id);
-    res.json(recommendations);
-  } catch (error) {
-    console.error('Resource recommendations error:', error);
-    res.status(500).json({ error: 'Failed to generate resource recommendations' });
+  const report = await jobService.generateJobProgressReport(req.params.id);
+  res.json(report); // Removed 'return'
+}));
+
+router.get('/:id/resource-recommendations', asyncHandler(async (req: AuthRequest, res: Response) => {
+  // Assuming jobService.recommendResourceAllocation is a function
+  if (typeof jobService.recommendResourceAllocation !== 'function') {
+    res.status(500).json({ // Removed 'return' here
+      error: 'Service not available',
+      message: 'recommendResourceAllocation method not implemented in jobService'
+    });
+    return; // Added return for early exit
   }
-});
+
+  const recommendations = await jobService.recommendResourceAllocation(req.params.id);
+  res.json(recommendations); // Removed 'return'
+}));
 
 export default router;

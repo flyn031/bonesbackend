@@ -9,11 +9,18 @@ import orderRoutes from './routes/orders';
 import financialRoutes from './routes/financial';
 import supplierRoutes from './routes/suppliers';
 import materialRoutes from './routes/materials';
-import inventoryRoutes from './routes/inventory';
 import dashboardRoutes from './routes/dashboard';
-import jobRoutes from './routes/jobs'; // Added job routes import
-import jobCostRoutes from './routes/jobCosts'; // Added job cost routes import
-import quotesRouter from './routes/quotes'; // Added quotes router import
+import jobRoutes from './routes/jobs';
+import jobCostRoutes from './routes/jobCosts';
+import quotesRouter from './routes/quotes';
+import jobMaterialRoutes from './routes/jobMaterials';
+import auditRoutes from './routes/audit';
+
+// Import the fixed inventory routes
+import inventoryRoutes from './routes/inventory';
+
+// ADD THIS LINE: Import employee routes
+import employeeRoutes from './routes/employeeRoutes';
 
 dotenv.config();
 const app = express();
@@ -24,39 +31,115 @@ const prisma = new PrismaClient();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// --- DEBUGGING: Explicit OPTIONS handler ---
+app.options('*', (req, res) => {
+  console.log(`>>> Explicit OPTIONS handler hit for path: ${req.path}`);
+  res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  console.log('>>> Responding to OPTIONS request with status 204');
+  res.status(204).send();
+});
+
 // 2. CORS
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
 // 3. Enhanced logging middleware
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
-    body: req.body,
-    auth: req.headers.authorization ? `Bearer token present: ${req.headers.authorization.substring(0, 20)}...` : 'No token',
-    query: req.query,
-    params: req.params
-  });
+  if (req.method !== 'OPTIONS') {
+    const authHeader = req.headers.authorization;
+    const authLog = authHeader
+      ? authHeader.startsWith('Bearer ')
+        ? `Bearer token present: ${authHeader.substring(0, 20)}...`
+        : 'Authorization header present but not Bearer'
+      : 'No Authorization header';
+
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
+      body: req.body,
+      auth: authLog,
+      query: req.query,
+      params: req.params
+    });
+  }
   next();
 });
 
-// Global error handler
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+// 🔧 DEBUGGING: Track request flow with detailed route checking
+app.use((req, res, next) => {
+  console.log(`🔍 [SERVER] ${req.method} ${req.path} - Before route registration`);
+  
+  // 🚨 SPECIAL DEBUG FOR QUOTES
+  if (req.path.startsWith('/api/quotes')) {
+    console.log(`🚨 [QUOTES DEBUG] ${req.method} ${req.path} detected - checking route conflict`);
+    console.log(`🚨 [QUOTES DEBUG] Original URL: ${req.originalUrl}`);
+    console.log(`🚨 [QUOTES DEBUG] Full path: ${req.path}`);
+  }
+  
+  next();
 });
 
-// 4. Routes
+// 4. Routes - DEBUGGING EACH REGISTRATION
+console.log('🔧 [SERVER] Registering auth routes...');
 app.use('/api/auth', authRoutes);
+
+console.log('🔧 [SERVER] Registering customer routes...');
 app.use('/api/customers', customerRoutes);
+
+console.log('🔧 [SERVER] Registering order routes...');
 app.use('/api/orders', orderRoutes);
+
+console.log('🔧 [SERVER] Registering financial routes...');
 app.use('/api/financial', financialRoutes);
+
+console.log('🔧 [SERVER] Registering pdf routes...');
 app.use('/api/pdf', pdfRoutes);
+
+console.log('🔧 [SERVER] Registering supplier routes...');
 app.use('/api/suppliers', supplierRoutes);
+
+console.log('🔧 [SERVER] Registering material routes...');
 app.use('/api/materials', materialRoutes);
+
+// Updated: Route for dual-purpose inventory items
+console.log('🔧 [SERVER] Registering inventory routes...');
 app.use('/api/inventory', inventoryRoutes);
+
+console.log('🔧 [SERVER] Registering dashboard routes...');
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/jobs', jobRoutes); // Added job routes configuration
-app.use('/api', jobCostRoutes); // Changed from '/api/job-costs' to '/api' to match the route paths
-app.use('/api/quotes', quotesRouter); // Added quotes router
+
+console.log('🔧 [SERVER] Registering job routes...');
+app.use('/api/jobs', jobRoutes);
+
+console.log('🔧 [SERVER] Registering job material routes (ALSO /api/jobs)...');
+app.use('/api/jobs', jobMaterialRoutes); // 🚨 POTENTIAL CONFLICT!
+
+// 🚨 FIXED: Commented out the problematic route that was intercepting all /api/* requests
+// console.log('🔧 [SERVER] Registering job cost routes (ALSO /api)...');
+// app.use('/api', jobCostRoutes); // 🚨 COMMENTED OUT - was intercepting all /api/* requests including /api/quotes
+
+// 🎯 CRITICAL DEBUG: Add specific middleware RIGHT BEFORE quotes router
+console.log('🔧 [SERVER] About to register quotes router...');
+app.use('/api/quotes', (req, res, next) => {
+  console.log(`🎯 [SERVER] Quotes middleware hit: ${req.method} ${req.path}`);
+  console.log(`🎯 [SERVER] Original URL: ${req.originalUrl}`);
+  console.log(`🎯 [SERVER] Query:`, req.query);
+  next();
+});
+
+console.log('🔧 [SERVER] Registering quotes router...');
+app.use('/api/quotes', quotesRouter);
+
+console.log('🔧 [SERVER] Registering audit routes...');
+app.use('/api/audit', auditRoutes);
+
+console.log('🔧 [SERVER] Registering employee routes...');
+app.use('/api/employees', employeeRoutes);
 
 // Basic health check endpoint
 app.get('/health', async (req, res) => {
@@ -64,7 +147,22 @@ app.get('/health', async (req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: 'healthy', database: 'connected' });
   } catch (error) {
-    res.status(500).json({ status: 'error', database: 'disconnected' });
+    console.error("Database health check failed:", error);
+    res.status(500).json({ status: 'error', database: 'disconnected', message: 'Failed to connect to database.' });
+  }
+});
+
+// 🔧 DEBUGGING: Catch unhandled routes
+app.use((req, res, next) => {
+  console.log(`❌ [SERVER] Unhandled route: ${req.method} ${req.path}`);
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Global error handler MUST come AFTER all routes
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('🚨 [SERVER] Global error handler caught:', err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error occurred.' });
   }
 });
 
@@ -72,4 +170,8 @@ const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('🔧 [SERVER] All routes registered. Server ready.');
 });
+
+// Export the app for testing
+export { app, prisma };

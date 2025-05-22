@@ -1,6 +1,14 @@
 // scripts/createSampleData.ts
-import { PrismaClient, MaterialCategory, SupplierStatus } from '@prisma/client';
+import { PrismaClient, SupplierStatus } from '@prisma/client';
 const prisma = new PrismaClient();
+
+// Define the category enum locally since it's missing from client
+enum MaterialCategory {
+  RAW_MATERIAL = 'RAW_MATERIAL',
+  FINISHED_GOOD = 'FINISHED_GOOD',
+  CONSUMABLE = 'CONSUMABLE',
+  EQUIPMENT = 'EQUIPMENT'
+}
 
 async function main() {
   // Create some sample suppliers
@@ -12,11 +20,9 @@ async function main() {
         phone: '01234 567890',
         address: '123 Main Street, London',
         rating: 4.5,
-        status: SupplierStatus.ACTIVE,
-        notes: 'Reliable supplier for construction materials',
-        totalOrders: 0,
-        completedOrders: 0,
-        averageDeliveryTime: 0
+        status: SupplierStatus.ACTIVE
+        // notes: 'Reliable supplier for construction materials', // Removed notes field
+        // totalOrders, completedOrders, averageDeliveryTime removed - these fields don't exist in the schema
       }
     }),
     prisma.supplier.create({
@@ -26,11 +32,9 @@ async function main() {
         phone: '01234 098765',
         address: '456 Market Street, Birmingham',
         rating: 4.2,
-        status: SupplierStatus.ACTIVE,
-        notes: 'Specialized in raw materials',
-        totalOrders: 0,
-        completedOrders: 0,
-        averageDeliveryTime: 0
+        status: SupplierStatus.ACTIVE
+        // notes: 'Specialized in raw materials', // Removed notes field
+        // totalOrders, completedOrders, averageDeliveryTime removed - these fields don't exist in the schema
       }
     }),
     prisma.supplier.create({
@@ -40,11 +44,9 @@ async function main() {
         phone: '01234 123456',
         address: '789 Industry Avenue, Manchester',
         rating: 3.8,
-        status: SupplierStatus.ACTIVE,
-        notes: 'Good for equipment and parts',
-        totalOrders: 0,
-        completedOrders: 0,
-        averageDeliveryTime: 0
+        status: SupplierStatus.ACTIVE
+        // notes: 'Good for equipment and parts', // Removed notes field
+        // totalOrders, completedOrders, averageDeliveryTime removed - these fields don't exist in the schema
       }
     })
   ]);
@@ -56,11 +58,11 @@ async function main() {
         name: 'Lumber',
         code: 'LMB-001',
         description: 'High quality construction lumber',
-        category: MaterialCategory.RAW_MATERIAL,
+        category: MaterialCategory.RAW_MATERIAL.toString(), // Convert enum to string
         unitPrice: 25.50,
         unit: 'BOARD',
-        minStockLevel: 10,
-        currentStockLevel: 35,
+        minStock: 10, // Changed from minStockLevel
+        currentStock: 35, // Changed from currentStockLevel
         reorderPoint: 15,
         leadTimeInDays: 7,
         manufacturer: 'WoodWorks Inc.',
@@ -72,11 +74,11 @@ async function main() {
         name: 'Concrete Mix',
         code: 'CON-001',
         description: 'Standard grade concrete mix',
-        category: MaterialCategory.RAW_MATERIAL,
+        category: MaterialCategory.RAW_MATERIAL.toString(), // Convert enum to string
         unitPrice: 0.85,
         unit: 'KG',
-        minStockLevel: 100,
-        currentStockLevel: 350,
+        minStock: 100, // Changed from minStockLevel
+        currentStock: 350, // Changed from currentStockLevel
         reorderPoint: 150,
         leadTimeInDays: 3,
         manufacturer: 'Concrete Solutions Ltd',
@@ -88,11 +90,11 @@ async function main() {
         name: 'Industrial Paint',
         code: 'PNT-001',
         description: 'Weather-resistant exterior paint',
-        category: MaterialCategory.RAW_MATERIAL,
+        category: MaterialCategory.RAW_MATERIAL.toString(), // Convert enum to string
         unitPrice: 12.99,
         unit: 'LITER',
-        minStockLevel: 5,
-        currentStockLevel: 22,
+        minStock: 5, // Changed from minStockLevel
+        currentStock: 22, // Changed from currentStockLevel
         reorderPoint: 10,
         leadTimeInDays: 5,
         manufacturer: 'ColorTech Industries',

@@ -1,227 +1,137 @@
+// backend/src/controllers/dashboardController.ts
+
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { calculateCustomerHealth } from '../services/customerHealthService';
+import prisma from '../utils/prismaClient'; // Keep if needed for specific formatting not in service
+import { calculateCustomerHealth } from '../services/customerHealthService'; // Assuming path is correct
+import {
+  getDashboardStats,
+  getOrderTrends,
+  getRecentActivity,
+  getOrderTrendKPI
+} from '../services/dashboardService'; // Adjust path if needed
 
-const prisma = new PrismaClient();
-
-
+// --- getDashboardData ---
 export const getDashboardData = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log('Fetching dashboard data...');
-    const [activeOrders, totalSuppliers, totalCustomers, lowStock, monthlyRevenue] = await Promise.all([
-      prisma.order.count({
-        where: { 
-          status: { 
-            notIn: ['COMPLETED', 'CANCELLED', 'DELIVERED'] 
-          } 
-        }
-      }),
-      prisma.supplier.count(),
-      prisma.customer.count(),
-      prisma.material.count({
-        where: {
-          currentStockLevel: {
-            lte: 10 // or whatever your low stock threshold is
-          }
-        }
-      }),
-      prisma.order.aggregate({
-        where: {
-          status: 'COMPLETED', // Only count completed orders
-          createdAt: {
-            gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-            lte: new Date() // Add upper bound to be safe
-          }
-        },
-        _sum: {
-          totalAmount: true
-        }
-      })
-    ]);
-
-    const dashboardData = {
-      activeOrders,
-      totalSuppliers,
-      lowStock,
-      monthlyRevenue: monthlyRevenue._sum.totalAmount || 0,
-      totalCustomers
-    };
-
-    console.log('Dashboard data fetched:', dashboardData);
+    console.log('Controller: Fetching dashboard stats...');
+    const dashboardData = await getDashboardStats();
+    console.log('Controller: Dashboard stats fetched:', dashboardData);
     res.json(dashboardData);
-  } catch (error) {
-    console.error('Error fetching dashboard data:', error);
+  } catch (error: any) {
+    console.error('Controller: Error fetching dashboard stats:', error);
     res.status(500).json({ error: 'Failed to fetch dashboard data', details: error.message });
   }
 };
 
+// --- getOrderTrendsData ---
 export const getOrderTrendsData = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log('Fetching order trends data...');
-    
-    // Expand the time range to ensure we have data
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-    const orders = await prisma.order.findMany({
-      where: {
-        createdAt: {
-          gte: oneYearAgo
-        }
-      },
-      select: {
-        createdAt: true,
-        totalAmount: true
-      }
-    });
-
-    console.log('Total orders found:', orders.length);
-
-    // Group orders by month with more robust month naming
-    const monthNames = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-
-    const monthlyTrends = orders.reduce((acc, order) => {
-      const date = new Date(order.createdAt);
-      const monthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-      
-      if (!acc[monthYear]) {
-        acc[monthYear] = { count: 0, totalAmount: 0 };
-      }
-      acc[monthYear].count += 1;
-      acc[monthYear].totalAmount += order.totalAmount;
-      return acc;
-    }, {});
-
-    // Convert to array and sort
-    const monthlyTrendsArray = Object.entries(monthlyTrends)
-      .map(([month, data]) => ({
-        month,
-        value: data.count, // Changed to match frontend expectation
-        totalAmount: data.totalAmount
-      }))
-      .sort((a, b) => {
-        // Custom sorting to ensure chronological order
-        const monthOrder = monthNames;
-        const [aMonth, aYear] = a.month.split(' ');
-        const [bMonth, bYear] = b.month.split(' ');
-        
-        if (aYear !== bYear) {
-          return parseInt(aYear) - parseInt(bYear);
-        }
-        return monthOrder.indexOf(aMonth) - monthOrder.indexOf(bMonth);
-      });
-
-    console.log('Processed Monthly Trends:', monthlyTrendsArray);
-
-    // Ensure we always have some data
-    if (monthlyTrendsArray.length === 0) {
-      monthlyTrendsArray.push(
-        { month: 'Jan', value: 0, totalAmount: 0 },
-        { month: 'Feb', value: 0, totalAmount: 0 }
-      );
-    }
-
+    console.log('Controller: Fetching order trends data for chart...');
+    const monthlyTrendsArray = await getOrderTrends();
+    console.log('Controller: Processed Monthly Trends for chart:', monthlyTrendsArray);
     res.json(monthlyTrendsArray);
-  } catch (error) {
-    console.error('Error fetching order trends:', error);
+  } catch (error: any) {
+    console.error('Controller: Error fetching order trends for chart:', error);
     res.status(500).json({ error: 'Failed to fetch order trends', details: error.message });
   }
 };
 
+// --- getRecentActivityData ---
 export const getRecentActivityData = async (req: Request, res: Response): Promise<void> => {
+    try {
+        console.log('Controller: Fetching recent activity...');
+        const activityData = await getRecentActivity();
+        const recentOrders = activityData.recentOrders || [];
+        const recentCustomers = activityData.recentCustomers || [];
+        console.log('Controller: Raw recent orders from service:', recentOrders);
+        console.log('Controller: Raw recent customers from service:', recentCustomers);
+
+        // Formatting Logic
+        const formatDate = (date: Date | string | null | undefined): string => {
+          if (!date) return 'N/A';
+          const dateObj = typeof date === 'string' ? new Date(date) : date;
+          if (isNaN(dateObj.getTime())) return 'Invalid Date';
+          return dateObj.toLocaleString('en-GB', {
+             day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+          });
+        };
+
+        const orderActivities = recentOrders.map((order: any) => ({
+            id: order.id,
+            title: `Order: ${order.projectTitle || 'N/A'}`,
+            time: formatDate(order.updatedAt),
+            status: `Status: ${order.status}`,
+            description: `Customer: ${order.customerName || order.customer?.name || 'Unknown'}`,
+            type: 'order' as const,
+            entityId: order.id,
+            originalDate: order.updatedAt
+        }));
+
+        const customerActivities = recentCustomers.map((customer: any) => ({
+            id: customer.id,
+            title: `New Customer: ${customer.name}`,
+            time: formatDate(customer.createdAt),
+            status: 'Added',
+            description: `Email: ${customer.email || 'N/A'}`,
+            type: 'customer' as const,
+            entityId: customer.id,
+            originalDate: customer.createdAt
+        }));
+
+        const combinedActivities = [ ...orderActivities, ...customerActivities ]
+            .sort((a, b) => new Date(b.originalDate).getTime() - new Date(a.originalDate).getTime())
+            .slice(0, 5)
+            .map(({ originalDate, ...rest }: any) => rest);
+        // End Formatting
+
+        console.log('Controller: Combined recent activity:', combinedActivities);
+        res.json(combinedActivities);
+    } catch (error: any) {
+        console.error('Controller: Error fetching/formatting recent activity:', error);
+        res.status(500).json({ error: 'Failed to fetch recent activity', details: error.message });
+    }
+};
+
+
+// --- getCustomerHealthDashboard --- (VERIFY THIS FUNCTION IS FULLY REPLACED)
+export const getCustomerHealthDashboard = async (req: Request, res: Response): Promise<void> => {
   try {
-    console.log('Fetching recent orders...');
-    const recentOrders = await prisma.order.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      include: { customer: true }
-    });
-    console.log('Recent orders fetched:', recentOrders);
+    console.log('Controller: Fetching customer health dashboard data...');
+    // Call the service function - it returns the summary object
+    const customerHealthSummary = await calculateCustomerHealth();
 
-    console.log('Fetching recent customers...');
-    const recentCustomers = await prisma.customer.findMany({
-      take: 5,
-      orderBy: { createdAt: 'desc' }
-    });
-    console.log('Recent customers fetched:', recentCustomers);
-
-    // Format date to a user-friendly format
-    const formatDate = (date: Date): string => {
-      return new Date(date).toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      }) + ' ' + new Date(date).toLocaleTimeString('en-GB', {
-        hour: '2-digit',
-        minute: '2-digit'
-      });
+    // Construct the response using the data ALREADY calculated by the service
+    const dashboardData = {
+      healthScores: customerHealthSummary.healthScores, // Use array from summary
+      lastUpdated: new Date(),
+      totalCustomers: customerHealthSummary.totalCustomers, // Use count from summary
+      churnRiskBreakdown: customerHealthSummary.churnRiskBreakdown, // Use breakdown from summary
+      // upsellOpportunities: customerHealthSummary.upsellOpportunities // Optionally include if needed
     };
 
-    // Transform orders into activity format expected by the dashboard
-    const orderActivities = recentOrders.map(order => ({
-      id: order.id,
-      title: `Order: ${order.projectTitle || 'New Order'}`,
-      time: formatDate(order.createdAt),
-      status: `Status: ${order.status}`,
-      description: `Customer: ${order.customer?.name || order.customerName || 'Unknown'}`
-    }));
+    console.log('Controller: Customer health dashboard data fetched:', dashboardData); // Log the data being sent
+    res.json(dashboardData); // Send the correctly structured data
 
-    // Transform customers into activity format
-    const customerActivities = recentCustomers.map(customer => ({
-      id: customer.id,
-      title: `New Customer: ${customer.name}`,
-      time: formatDate(customer.createdAt),
-      status: 'Added',
-      description: `Email: ${customer.email}`
-    }));
-
-    // Combine and sort by time (most recent first)
-    // We need to get the original dates for sorting
-    const combinedActivities = [
-      ...recentOrders.map((order, index) => ({ 
-        ...orderActivities[index], 
-        originalDate: order.createdAt 
-      })),
-      ...recentCustomers.map((customer, index) => ({ 
-        ...customerActivities[index], 
-        originalDate: customer.createdAt 
-      }))
-    ]
-      .sort((a, b) => new Date(b.originalDate).getTime() - new Date(a.originalDate).getTime())
-      .slice(0, 5) // Take only the 5 most recent activities
-      .map(({ originalDate, ...rest }) => rest); // Remove the originalDate field used for sorting
-
-    res.json(combinedActivities);
-  } catch (error) {
-    console.error('Error fetching recent activity:', error);
-    res.status(500).json({ error: 'Failed to fetch recent activity', details: error.message });
+  } catch (error: any) {
+    console.error('Controller: Error in getCustomerHealthDashboard:', error instanceof Error ? error.message : error); // Log specific error
+    // Send back a generic error message + the specific details from the caught error
+    res.status(500).json({
+        error: 'Failed to generate customer health dashboard', // Keep generic error message
+        details: error instanceof Error ? error.message : String(error) // Send specific details
+    });
   }
 };
 
-export const getCustomerHealthDashboard = async (req: Request, res: Response): Promise<void> => {
-  try {
-    console.log('Fetching customer health dashboard data...');
-    
-    const healthScores = await calculateCustomerHealth();
 
-    const dashboardData = {
-      healthScores,
-      lastUpdated: new Date(),
-      totalCustomers: healthScores.length,
-      churnRiskBreakdown: {
-        low: healthScores.filter(score => score.churnRisk === 'Low').length,
-        medium: healthScores.filter(score => score.churnRisk === 'Medium').length,
-        high: healthScores.filter(score => score.churnRisk === 'High').length
-      }
-    };
-
-    console.log('Customer health dashboard data fetched:', dashboardData);
-    res.json(dashboardData);
-  } catch (error) {
-    console.error('Error generating customer health dashboard:', error);
-    res.status(500).json({ error: 'Failed to generate customer health dashboard', details: error.message });
-  }
+// --- getOrderTrendKPIData ---
+export const getOrderTrendKPIData = async (req: Request, res: Response): Promise<void> => {
+   try {
+     console.log('Controller: Fetching order trend KPI data...');
+     const kpiData = await getOrderTrendKPI();
+     console.log('Controller: Order trend KPI data fetched:', kpiData);
+     res.json(kpiData);
+   } catch (error: any) {
+     console.error('Controller: Error fetching order trend KPI:', error);
+     res.status(500).json({ error: 'Failed to fetch order trend KPI data', details: error.message });
+   }
 };

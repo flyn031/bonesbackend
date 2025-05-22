@@ -1,11 +1,11 @@
-import { Router, Response } from 'express';
-import { 
-  login, 
-  register, 
+import { Router, Request, Response } from 'express'; // <--- IMPORTANT: Ensure 'Request' is imported here
+import {
+  login,
+  register,
   getUserProfile,
   updateUserProfile
 } from '../controllers/authController';
-import { authenticateToken, AuthRequest } from '../middleware/authMiddleware';
+import { authenticateToken } from '../middleware/authMiddleware'; // <--- REMOVED AuthRequest from this import
 
 const router = Router();
 
@@ -14,7 +14,7 @@ router.post('/login', login);
 router.post('/register', register);
 
 // User me route
-router.get('/me', authenticateToken, (req: AuthRequest, res: Response) => {
+router.get('/me', authenticateToken, (req: Request, res: Response) => { // <--- CHANGED AuthRequest to Request
   res.json({ message: 'Protected route accessed successfully', user: req.user });
 });
 

@@ -1,0 +1,679 @@
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./node_modules/.prisma/client" // Explicit relative path from project root
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  name            String
+  password        String
+  role            Role           @default(USER)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  createdOrders   Order[]        @relation("CreatedBy")
+  managedOrders   Order[]        @relation("ProjectOwner")
+  createdQuotes   Quote[]        // Relation to quotes created by this user
+
+  // Audit relations
+  quoteHistory    QuoteHistory[] @relation("QuoteHistoryUser")
+  orderHistory    OrderHistory[] @relation("OrderHistoryUser")
+  jobHistory      JobHistory[]   @relation("JobHistoryUser")
+  uploadedDocs    Document[]     @relation("DocumentUser")
+
+  // Link to Employee if this user is also an employee
+  employee        Employee?      @relation(fields: [employeeId], references: [id])
+  employeeId      String?        @unique // Added for the one-to-one relation
+}
+
+model Employee {
+  id                    String      @id @default(cuid())
+  name                  String
+  email                 String?     @unique // Optional: email can be unique for employees
+  phone                 String?
+  jobTitle              String      // e.g., "Engineer", "Technician", "Project Manager"
+  // CORRECTED: Changed from String[]? to String[] based on Prisma validation error.
+  // It will be an array, which can be empty but not null.
+  technicalQualifications String[]
+  isActive              Boolean     @default(true) // Track active/inactive employees
+  hireDate              DateTime?
+  terminationDate       DateTime?
+  notes                 String?
+
+  // Relation to TimeEntry (to track hours for this employee)
+  timeEntries           TimeEntry[]
+
+  // Optional: Link to a User if this employee also logs into the system
+  user                  User?
+  userId                String?     @unique // Foreign key to the User model
+
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@index([jobTitle])
+  @@index([isActive])
+}
+
+model Job {
+  id              String        @id @default(cuid())
+  title           String
+  description     String?
+  status          JobStatus     @default(ACTIVE)
+  customer        Customer      @relation(fields: [customerId], references: [id])
+  customerId      String
+  orders          Order[]
+  costs           JobCost[]     // Relation for job costs
+  materials       JobMaterial[] // Add this line for job materials
+  startDate       DateTime?
+  expectedEndDate DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Audit relations
+  history         JobHistory[]
+  documents       Document[]
+  currentVersion  Int           @default(1)
+
+  // New relation for TimeEntry
+  timeEntries     TimeEntry[]
+
+  @@index([customerId])
+}
+
+model JobCost {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  description String
+  amount      Float
+  costDate    DateTime @default(now())
+  category    String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([jobId])
+}
+
+// New model for Job-Material relationship
+model JobMaterial {
+  id                String    @id @default(cuid())
+  job               Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId             String
+  material          Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  materialId        String
+
+  // Usage details
+  quantityNeeded    Float     @default(1)
+  quantityUsed      Float     @default(0)
+  quantityAllocated Float     @default(0)
+  unitCost          Float?    // Cost at time of allocation
+  totalCost         Float?    // Calculated field
+
+  // Tracking
+  allocatedAt       DateTime?
+  usedAt            DateTime?
+  notes             String?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([jobId, materialId]) // Prevent duplicate materials per job
+  @@index([jobId])
+  @@index([materialId])
+}
+
+model Customer {
+  id                   String        @id @default(cuid())
+  name                 String
+  email                String?       @unique
+  phone                String?
+  address              String?
+  orders               Order[]
+  jobs                 Job[]
+  quotes               Quote[]
+  materials            Material[]    // Relation to materials
+  importSource         String?
+
+  shippingAddress      String?
+  billingAddress       String?
+  paymentTerms         PaymentTerms?
+  creditLimit          Float?
+  specialTermsNotes    String?
+  discountPercentage   Float?
+  status               String? // Consider making this an enum e.g. CustomerStatus
+
+  contactPersons       ContactPerson[]
+  totalOrders          Int?
+  totalSpent           Float?
+  lastOrderDate        DateTime?
+
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@index([email])
+}
+
+model ContactPerson {
+  id          String      @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  role        ContactRole?
+  notes       String?
+  isPrimary   Boolean     @default(false)
+
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([customerId])
+  @@index([email])
+}
+
+model Order {
+  id                   String           @id @default(cuid())
+  projectTitle         String
+  quoteRef             String
+  orderType            OrderType        @default(CUSTOMER_LINKED)
+  status               OrderStatus      @default(DRAFT)
+  customerName         String
+  contactPerson        String?
+  contactPhone         String?
+  contactEmail         String?
+  projectValue         Float
+  marginPercent        Float?
+  leadTimeWeeks        Int?
+  items                Json
+  costBreakdown        Json?
+  paymentTerms         PaymentTerms     @default(THIRTY_DAYS)
+  customPaymentTerms   String?
+  currency             String           @default("GBP")
+  exchangeRate         Float?
+  vatRate              Float?
+  subTotal             Float            @default(0)
+  totalTax             Float            @default(0)
+  totalAmount          Float            @default(0)
+  profitMargin         Float            @default(0)
+  discounts            Json?
+  paymentSchedule      Json?
+  budgetAllocations    Json?
+  notes                String?
+
+  customer             Customer?        @relation(fields: [customerId], references: [id])
+  customerId           String?
+  job                  Job?             @relation(fields: [jobId], references: [id])
+  jobId                String?
+  projectOwner         User             @relation("ProjectOwner", fields: [projectOwnerId], references: [id])
+  projectOwnerId       String
+  createdBy            User             @relation("CreatedBy", fields: [createdById], references: [id])
+  createdById          String
+  paymentMilestones    PaymentMilestone[]
+
+  sourceQuoteId        String?
+  sourceQuote          Quote?           @relation(fields: [sourceQuoteId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  // Audit relations
+  history              OrderHistory[]
+  documents            Document[]
+  currentVersion       Int              @default(1)
+
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([customerId])
+  @@index([jobId])
+  @@index([projectOwnerId])
+  @@index([createdById])
+  @@index([status])
+  @@index([quoteRef])
+  @@index([sourceQuoteId])
+}
+
+model ImportLog {
+  id          String       @id @default(cuid())
+  filename    String
+  status      ImportStatus
+  records     Int
+  errors      Json?
+  createdAt   DateTime     @default(now())
+}
+
+model RegionalTaxSetting {
+  id             String   @id @default(cuid())
+  country        String
+  region         String?
+  standardVatRate Float
+  reducedVatRate Float?
+  taxCode        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CurrencyRate {
+  id           String   @id @default(cuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Float
+  validFrom    DateTime
+  validTo      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PaymentMilestone {
+  id          String          @id @default(cuid())
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  description String
+  amount      Float
+  dueDate     DateTime
+  status      MilestoneStatus @default(PENDING)
+  paidDate    DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([orderId])
+}
+
+model Supplier {
+  id        String         @id @default(cuid())
+  name      String
+  email     String?        @unique
+  phone     String?
+  address   String?
+  materials Material[]
+  rating    Float?
+  status    SupplierStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([email])
+}
+
+model Material {
+  id                     String          @id @default(cuid())
+  code                   String          @unique
+  name                   String
+  description            String?
+  unitPrice              Float
+  unit                   String
+  minStock               Int             @default(0)
+  currentStock           Int             @default(0)
+  supplier               Supplier?       @relation(fields: [supplierId], references: [id])
+  supplierId             String?
+
+  // Add customer relation
+  customer               Customer?       @relation(fields: [customerId], references: [id])
+  customerId             String?
+
+  quoteLineItems         QuoteLineItem[]
+  jobMaterials           JobMaterial[]   // Add this line for job materials
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  // Fields from inventoryController / seed script
+  category               String?
+  reorderPoint           Int?            @default(0)
+  leadTimeInDays         Int?            @default(0)
+  inventoryPurpose       String?         @default("INTERNAL")
+  isQuotable             Boolean?        @default(false)
+  isOrderable            Boolean?        @default(true)
+  customerMarkupPercent  Float?
+  visibleToCustomers     Boolean?        @default(false)
+  manufacturer           String?
+  productSpecifications  String?
+
+  @@index([supplierId])
+  @@index([customerId])
+  @@index([code])
+}
+
+model CompanySettings {
+  id                     String   @id @default(cuid())
+  quoteReferencePrefix   String   @default("QR")
+  lastQuoteReferenceSeq  Int      @default(0)
+  quoteNumberPrefix      String   @default("Q")         // Added field
+  lastQuoteNumber        Int      @default(0)           // Added field
+  quoteNumberFormat      String   @default("{PREFIX}-{NUMBER}") // Added field
+  companyName            String?
+  companyAddress         String?
+  companyPhone           String?
+  companyEmail           String?
+  companyWebsite         String?
+  companyVatNumber       String?
+  companyLogo            String?
+  defaultVatRate         Float?   @default(20.0)        // Added field for VAT
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+model Quote {
+  id                  String         @id @default(cuid())
+  title               String
+  description         String?
+  status              QuoteStatus    @default(DRAFT)
+
+  customerId          String
+  customer            Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdById         String
+  createdBy           User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  quoteReference      String
+  quoteNumber         String         @unique
+  versionNumber       Int            @default(1)
+  isLatestVersion     Boolean        @default(true)
+  changeReason        String?
+  parentQuoteId       String?
+  parentQuote         Quote?         @relation("QuoteRevisions", fields: [parentQuoteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  childQuotes         Quote[]        @relation("QuoteRevisions")
+
+  contactPerson       String?
+  contactEmail        String?
+  contactPhone        String?
+  customerReference   String?
+  validUntil          DateTime?
+  totalAmount         Float          @default(0)
+
+  lineItems           QuoteLineItem[]
+  orders              Order[]
+
+  // Audit relations
+  history             QuoteHistory[]
+  documents           Document[]
+  currentVersion      Int            @default(1)
+
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([quoteReference])
+  @@index([customerId])
+  @@index([createdById])
+  @@index([status])
+  @@index([parentQuoteId])
+}
+
+model QuoteLineItem {
+  id          String    @id @default(cuid())
+  quoteId     String
+  quote       Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  description String
+  quantity    Float     @default(1)
+  unitPrice   Float     @default(0)
+
+  materialId  String?
+  material    Material? @relation(fields: [materialId], references: [id], onDelete:SetNull)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([quoteId])
+  @@index([materialId])
+}
+
+// === AUDIT TRAIL MODELS ===
+model QuoteHistory {
+  id                  String    @id @default(cuid())
+  quoteId             String
+  quote               Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  // Snapshot of quote state
+  version             Int
+  status              String
+  data                Json      // Full quote data snapshot
+
+  // Change details
+  changeType          String    // CREATE, UPDATE, DELETE, STATUS_CHANGE, APPROVED, REJECTED
+  changedBy           String
+  changedByUser       User      @relation("QuoteHistoryUser", fields: [changedBy], references: [id])
+  changeReason        String?
+
+  // Customer interaction tracking
+  customerApproved    Boolean?
+  customerSignature   String?   // Base64 encoded signature
+  approvalTimestamp   DateTime?
+
+  // Metadata
+  createdAt           DateTime  @default(now())
+  ipAddress           String?
+  userAgent           String?
+
+  @@index([quoteId])
+  @@index([changedBy])
+  @@index([createdAt])
+}
+
+model OrderHistory {
+  id                  String    @id @default(cuid())
+  orderId             String
+  order               Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Snapshot of order state
+  version             Int
+  status              String
+  data                Json      // Full order data snapshot
+
+  // Change details
+  changeType          String    // CREATE, UPDATE, DELETE, STATUS_CHANGE, CUSTOMER_APPROVED
+  changedBy           String
+  changedByUser       User      @relation("OrderHistoryUser", fields: [changedBy], references: [id])
+  changeReason        String?
+
+  // Customer interaction tracking
+  customerApproved    Boolean?
+  customerSignature   String?   // Base64 encoded signature
+  approvalTimestamp   DateTime?
+
+  // Metadata
+  createdAt           DateTime  @default(now())
+  ipAddress           String?
+  userAgent           String?
+
+  @@index([orderId])
+  @@index([changedBy])
+  @@index([createdAt])
+}
+
+model JobHistory {
+  id              String    @id @default(cuid())
+  jobId           String
+  job             Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // Snapshot of job state
+  version         Int
+  status          String
+  data            Json      // Full job data snapshot
+
+  // Change details
+  changeType      String    // CREATE, UPDATE, DELETE, STATUS_CHANGE, MATERIAL_ADDED, MATERIAL_REMOVED
+  changedBy       String
+  changedByUser   User      @relation("JobHistoryUser", fields: [changedBy], references: [id])
+  changeReason    String?
+
+  // Material change tracking
+  materialChanges Json?     // Details of material additions/removals
+
+  // Progress tracking
+  progressNotes   String?
+  attachments     Json?     // Array of file references
+
+  // Metadata
+  createdAt       DateTime  @default(now())
+  ipAddress       String?
+  userAgent       String?
+
+  @@index([jobId])
+  @@index([changedBy])
+  @@index([createdAt])
+}
+
+// Document storage for legal evidence
+model Document {
+  id             String    @id @default(cuid())
+
+  // Document details
+  name           String
+  originalName   String
+  mimeType       String
+  fileSize       Int
+  fileHash       String    // SHA-256 hash for integrity verification
+
+  // Storage location
+  storagePath    String
+  storageType    String    @default("LOCAL") // LOCAL, S3, etc.
+
+  // Document metadata
+  category       String    // QUOTE, ORDER, JOB, CONTRACT, SIGNATURE, EMAIL, etc.
+
+  // Link to entities
+  quoteId        String?
+  quote          Quote?    @relation(fields: [quoteId], references: [id])
+  orderId        String?
+  order          Order?    @relation(fields: [orderId], references: [id])
+  jobId          String?
+  job            Job?      @relation(fields: [jobId], references: [id])
+
+  // Legal metadata
+  isLegalDocument Boolean @default(false)
+  retentionPeriod Int?    // Years to retain for legal purposes
+
+  // Tracking
+  uploadedBy     String
+  uploadedByUser User    @relation("DocumentUser", fields: [uploadedBy], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([quoteId])
+  @@index([orderId])
+  @@index([jobId])
+  @@index([uploadedBy])
+  @@index([category])
+}
+
+// === TIME TRACKING MODELS ===
+// This model will store individual time entries by employees for jobs/projects
+model TimeEntry {
+  id              String    @id @default(cuid())
+  employeeId      String    @map("employee_id")
+  employee        Employee  @relation(fields: [employeeId], references: [id]) // Link to the Employee model
+
+  jobId           String    @map("job_id")
+  job             Job       @relation(fields: [jobId], references: [id]) // Link to your existing Job model
+
+  date            DateTime  @db.Date // Store just the date of the work
+  hours           Float     // e.g., 8.0, 4.5
+
+  isRdActivity    Boolean   @map("is_rd_activity") @default(false) // Flag for R&D related time
+  rdDescription   String?   @map("rd_description") // Detailed description if it's an R&D activity
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([jobId])
+  @@index([date])
+  @@index([isRdActivity])
+}
+
+// === ENUMS ===
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderType {
+  JOB_LINKED
+  CUSTOMER_LINKED
+  INTERNAL
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  DECLINED
+  IN_PRODUCTION
+  ON_HOLD
+  READY_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum JobStatus {
+  ACTIVE
+  COMPLETED
+  CANCELED
+  ON_HOLD
+  PENDING
+  DRAFT
+  IN_PROGRESS
+}
+
+enum ImportStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum PaymentTerms {
+  WITH_ORDER
+  PRIOR_TO_DISPATCH
+  THIRTY_DAYS
+  SIXTY_DAYS
+  NINETY_DAYS
+  CUSTOM
+  SPLIT_50_50
+  SPLIT_50_40_10
+}
+
+enum SupplierStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+  SUSPENDED
+  UNDER_REVIEW
+}
+
+enum MilestoneStatus {
+  PENDING
+  OVERDUE
+  PAID
+  CANCELLED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  APPROVED
+  DECLINED
+  CONVERTED
+  EXPIRED
+  PENDING
+}
+
+enum ContactRole {
+  PRIMARY
+  BILLING
+  TECHNICAL
+  SALES
+  SUPPORT
+  OTHER
+  ACCOUNTS
+  DELIVERIES
+  PRIMARY_BUYER
+  TECHNICAL_CONTACT
+  SITE_CONTACT
+  PROJECT_MANAGER
+  GENERAL_INQUIRY
+}

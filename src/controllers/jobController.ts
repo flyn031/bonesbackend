@@ -1,548 +1,511 @@
-import { Request, Response } from 'express';
+// backend/src/controllers/jobController.ts
+
 import prisma from '../utils/prismaClient';
-import dayjs from 'dayjs';
+import { Response } from 'express'; // NextFunction removed as not used
+import { AuthRequest } from '../middleware/authMiddleware';
+import { JobStatus, Prisma, Role as PrismaRole } from '@prisma/client';
 
-// Validation function for job creation
-const validateJobCreation = async (orderId: string) => {
-  // Check if the order exists and is eligible for job creation
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: {
-      job: true,
-      customer: true
-    }
-  });
+// --- Controller Functions ---
 
-  if (!order) {
-    throw new Error('Order not found');
-  }
-
-  if (order.job) {
-    throw new Error('A job has already been created for this order');
-  }
-
-  // Additional business rules can be added here
-  // For example, check order status, customer standing, etc.
-  // Removed the APPROVED status requirement to allow any order status
-  
-  return order;
-};
-
-// Automatic job duration estimation
-const estimateJobDuration = (order: any) => {
-  // Simple estimation based on project value
-  // This is a placeholder - you'd want more sophisticated logic
-  const baseHours = 40; // Starting point
-  const valueFactor = Math.log(order.projectValue + 1) * 5; // Logarithmic scaling
-  
-  return {
-    estimatedDuration: Math.round(baseHours + valueFactor),
-    expectedEndDate: dayjs().add(Math.round(baseHours + valueFactor), 'hour').toDate()
-  };
-};
-
-export const createJob = async (req: Request, res: Response) => {
+export const createJob = async (req: AuthRequest, res: Response) => {
   try {
-    console.log("Job creation request:", req.body);
-    
-    const { 
-      title, 
-      description, 
-      orderId, 
+    console.log("[JobController][createJob] Request body:", req.body);
+
+    const {
+      title,
+      description,
+      orderId,
       customerId,
       status,
       startDate,
       expectedEndDate,
-      assignedUserIds 
+      // estimatedCost, // This field is not on the Job model in your schema. Add to schema or handle via JobCost.
+      // assignedUserIds // Relation 'assignedUsers' is not on Job model in your schema.
     } = req.body;
 
-    // Validate required fields
-    if (!title || (!orderId && !customerId)) {
-      return res.status(400).json({ error: 'Title and either Order ID or Customer ID are required' });
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+    // Adjusted required fields: estimatedCost is removed as it's not in schema.
+    if (!title || !expectedEndDate) {
+      return res.status(400).json({ message: 'Missing required fields: title, expectedEndDate' });
+    }
+    if (!orderId && !customerId) {
+        return res.status(400).json({ message: 'Either Order ID or Customer ID must be provided' });
+    }
+    
+    // const parsedEstimatedCost = parseFloat(estimatedCost); // Only if estimatedCost is part of req and Job model
+    // if (estimatedCost !== undefined && isNaN(parsedEstimatedCost)) {
+    //     return res.status(400).json({ message: 'Invalid format for estimatedCost. Must be a number.' });
+    // }
+
+    let validExpectedEndDate: Date;
+    try {
+        validExpectedEndDate = new Date(expectedEndDate);
+        if (isNaN(validExpectedEndDate.getTime())) throw new Error('Invalid date');
+    } catch (e) {
+        return res.status(400).json({ message: 'Invalid format for expectedEndDate. Please use a valid date format.' });
     }
 
-    let customerToUse = null;
-    let orderToUse = null;
+    let determinedCustomerId: string | undefined = undefined;
+    let orderConnect: Prisma.OrderCreateNestedManyWithoutJobInput | undefined = undefined;
 
-    // If orderId is provided, connect to that order
     if (orderId) {
-      // Find the order first
       const order = await prisma.order.findUnique({
         where: { id: orderId },
-        include: { customer: true }
+        select: { customerId: true, customerName: true, contactEmail: true, contactPhone: true, id: true }
       });
 
       if (!order) {
-        return res.status(400).json({ error: 'Order not found' });
+        return res.status(404).json({ message: `Order with ID ${orderId} not found` });
       }
+      console.log("[JobController][createJob] Found order:", order.id);
+      orderConnect = { connect: { id: orderId } };
+      determinedCustomerId = order.customerId ?? undefined;
 
-      console.log("Found order:", order);
-      orderToUse = { id: orderId };
+      if (!determinedCustomerId && order.customerName) {
+           console.log(`[JobController][createJob] Order ${orderId} has no linked customerId. Trying to find/create customer: ${order.customerName}`);
+           let existingCustomer = await prisma.customer.findFirst({ where: { name: order.customerName } });
+           if (!existingCustomer && order.contactEmail) {
+                existingCustomer = await prisma.customer.findUnique({ where: { email: order.contactEmail }});
+           }
+           if (existingCustomer) {
+               determinedCustomerId = existingCustomer.id;
+               console.log(`[JobController][createJob] Linked to existing customer by name/email: ${existingCustomer.id}`);
+           } else {
+               try {
+                 const newCustomer = await prisma.customer.create({
+                     data: {
+                         name: order.customerName,
+                         email: order.contactEmail || `${order.customerName.replace(/\s+/g, '.').toLowerCase()}_job_auto@example.com`,
+                         phone: order.contactPhone || undefined,
+                         status: "ACTIVE",
+                     }
+                 });
+                 determinedCustomerId = newCustomer.id;
+                 console.log(`[JobController][createJob] Created new customer from order details: ${newCustomer.id}`);
+               } catch(custCreateError) {
+                 console.error("[JobController][createJob] Error creating customer from order details:", custCreateError);
+                 return res.status(500).json({ message: "Failed to auto-create customer for the order."});
+               }
+           }
+       }
+    }
 
-      // Find a customer to associate with this job
-      // First try to use the order's customer, or find the first available customer
-      if (order.customerId) {
-        customerToUse = { id: order.customerId };
-      } else {
-        // Look for the customer mentioned in the order
-        if (order.customerName) {
-          const existingCustomer = await prisma.customer.findFirst({
-            where: { name: order.customerName }
-          });
-          
-          if (existingCustomer) {
-            customerToUse = { id: existingCustomer.id };
-          } else {
-            // Create a new customer based on order info if needed
-            const newCustomer = await prisma.customer.create({
-              data: {
-                name: order.customerName || 'Customer from order',
-                email: order.contactEmail || '',
-                phone: order.contactPhone || ''
-              }
-            });
-            customerToUse = { id: newCustomer.id };
-          }
+    if (customerId && !determinedCustomerId) {
+        const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+        if (!customer) {
+            return res.status(404).json({ message: `Customer with ID ${customerId} not found` });
         }
-      }
+        determinedCustomerId = customer.id;
+        console.log(`[JobController][createJob] Using directly provided customerId: ${customerId}`);
     }
 
-    // If customerId is provided directly, use that
-    if (customerId && !customerToUse) {
-      const customer = await prisma.customer.findUnique({
-        where: { id: customerId }
-      });
-
-      if (!customer) {
-        return res.status(400).json({ error: 'Customer not found' });
-      }
-
-      customerToUse = { id: customerId };
+    if (!determinedCustomerId) {
+        return res.status(400).json({ message: 'Could not determine a customer to link the job to.' });
     }
 
-    // If we still don't have a customer, try to find any customer as fallback
-    if (!customerToUse) {
-      const anyCustomer = await prisma.customer.findFirst();
-      if (anyCustomer) {
-        customerToUse = { id: anyCustomer.id };
-      } else {
-        return res.status(400).json({ 
-          error: 'No customer available. Please create a customer first.' 
-        });
-      }
-    }
-
-    console.log("Using customer:", customerToUse);
-
-    // Create the job with fields from request or defaults
-    const jobData: any = {
+    const jobData: Prisma.JobCreateInput = {
       title,
-      description: description || 'Job created from system',
-      status: status || 'DRAFT',
+      description: description || undefined,
+      status: (status as JobStatus) || JobStatus.DRAFT, // Default to DRAFT
       startDate: startDate ? new Date(startDate) : new Date(),
-      expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      
-      // Connect to customer (REQUIRED)
-      customer: {
-        connect: customerToUse
-      },
-      
-      // Connect to creator
-      createdBy: {
-        connect: { id: req.user?.id }
-      }
+      expectedEndDate: validExpectedEndDate,
+      // estimatedCost: parsedEstimatedCost, // Add if 'estimatedCost' is on Job model
+      customer: { connect: { id: determinedCustomerId } },
+      ...(orderConnect && { orders: orderConnect }),
+      // createdBy is not on Job model.
+      // assignedUsers relation is not defined in schema.
     };
 
-    // Only connect to order if we have one
-    if (orderToUse) {
-      jobData.orders = {
-        connect: orderToUse
-      };
-    }
-
-    const job = await prisma.job.create({
+    const newJob = await prisma.job.create({
       data: jobData,
       include: {
-        customer: true,
-        orders: true
+        customer: { select: { id: true, name: true } },
+        orders: { select: { id: true, projectTitle: true } },
       }
     });
+    console.log("[JobController][createJob] Job created successfully:", newJob.id);
 
-    console.log("Job created successfully:", job);
-
-    // If we have an order, update it to link the job
     if (orderId) {
-      await prisma.order.update({
-        where: { id: orderId },
-        data: { 
-          jobId: job.id,
-          status: 'IN_PRODUCTION'
-        }
-      });
-    }
-
-    return res.status(201).json(job);
-  } catch (error) {
-    console.error('Job creation error:', error);
-    
-    // Return detailed error info
-    if (error instanceof Error) {
-      return res.status(400).json({ 
-        error: error.message,
-        stack: error.stack 
-      });
-    }
-    
-    return res.status(500).json({ error: 'Failed to create job' });
-  }
-};
-
-export const updateJob = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { 
-      title, 
-      description, 
-      status, 
-      assignedUserIds 
-    } = req.body;
-
-    // Validate status transitions
-    const currentJob = await prisma.job.findUnique({ where: { id } });
-    if (!currentJob) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    // Optional: Add state machine logic for status transitions
-    const validStatusTransitions = {
-      'DRAFT': ['PENDING', 'CANCELLED'],
-      'PENDING': ['IN_PROGRESS', 'CANCELLED'],
-      'IN_PROGRESS': ['COMPLETED', 'CANCELLED'],
-      'COMPLETED': ['IN_PROGRESS'] // Allow reopening if needed
-    };
-
-    if (status && 
-        (!validStatusTransitions[currentJob.status] || 
-         !validStatusTransitions[currentJob.status].includes(status))) {
-      return res.status(400).json({ 
-        error: `Invalid status transition from ${currentJob.status} to ${status}` 
-      });
-    }
-
-    // Prepare update data
-    const updateData: any = {};
-    if (title) updateData.title = title;
-    if (description) updateData.description = description;
-    if (status) updateData.status = status;
-
-    // Update job with optional user reassignment
-    const updatedJob = await prisma.job.update({
-      where: { id },
-      data: {
-        ...updateData,
-        // Handle user assignments if provided
-        ...(assignedUserIds && {
-          assignedUsers: {
-            // First, disconnect all existing assignments
-            deleteMany: {},
-            // Then create new assignments
-            create: assignedUserIds.map((userId: string) => ({
-              user: { connect: { id: userId } }
-            }))
-          }
-        }),
-        // Automatically update end date for completed jobs
-        ...(status === 'COMPLETED' && { 
-          actualEndDate: new Date() 
-        })
-      },
-      include: {
-        customer: true,
-        orders: true,
-        assignedUsers: {
-          include: {
-            user: {
-              select: { 
-                id: true, 
-                name: true 
-              }
-            }
-          }
-        }
+      try {
+          await prisma.order.update({
+              where: { id: orderId },
+              data: { jobId: newJob.id, status: 'IN_PRODUCTION' }
+          });
+          console.log(`[JobController][createJob] Updated order ${orderId} status and linked job ${newJob.id}`);
+      } catch (orderUpdateError) {
+           console.error(`[JobController][createJob] Failed to update order ${orderId}:`, orderUpdateError);
       }
-    });
-
-    // Optional: Create a note for significant status changes
-    if (status && status !== currentJob.status) {
-      await prisma.jobNote.create({
-        data: {
-          jobId: id,
-          authorId: req.user?.id,
-          content: `Job status changed from ${currentJob.status} to ${status}`
-        }
-      });
     }
+    return res.status(201).json(newJob);
 
-    res.json(updatedJob);
-  } catch (error) {
-    console.error('Job update error:', error);
-    res.status(500).json({ error: 'Failed to update job' });
+  } catch (error: any) {
+    console.error('[JobController][createJob] Error:', error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2003') {
+             return res.status(400).json({ message: `Invalid input: A related record (e.g., customer) was not found. Field: ${error.meta?.field_name}` });
+        }
+        if (error.code === 'P2002') {
+            return res.status(400).json({ message: `A job with this unique information already exists. Field: ${error.meta?.target}` });
+       }
+         return res.status(400).json({ message: `Database error. Code: ${error.code}` });
+    }
+    return res.status(500).json({ message: 'Failed to create job.', details: error.message });
   }
 };
 
-// Get list of jobs with optional filtering
-export const getJobs = async (req: Request, res: Response) => {
+export const getJobs = async (req: AuthRequest, res: Response) => {
   try {
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, sortBy = 'expectedEndDate', order = 'asc', customerId, searchTerm } = req.query;
+    console.log(`[JobController][getJobs] Filters: status=${status}, page=${page}, limit=${limit}, sortBy=${sortBy}, order=${order}, customerId=${customerId}, searchTerm=${searchTerm}`);
 
-    const where: any = {};
-    if (status) where.status = status;
+    const pageNum = parseInt(String(page), 10) || 1;
+    const limitNum = parseInt(String(limit), 10) || 10;
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: Prisma.JobWhereInput = {};
+    if (status && typeof status === 'string' && Object.values(JobStatus).includes(status as JobStatus)) {
+        where.status = status as JobStatus;
+    }
+    if (customerId && typeof customerId === 'string') {
+        where.customerId = customerId;
+    }
+    if (searchTerm && typeof searchTerm === 'string' && searchTerm.trim() !== '') {
+        const term = searchTerm.trim();
+        where.OR = [
+            { title: { contains: term, mode: 'insensitive' } },
+            { description: { contains: term, mode: 'insensitive' } },
+            { id: { equals: term } }, // Exact match for ID
+            { customer: { name: { contains: term, mode: 'insensitive' } } },
+        ];
+    }
+
+    const validSortFields = ['title', 'createdAt', 'expectedEndDate', 'status'];
+    const sortField = validSortFields.includes(String(sortBy)) ? String(sortBy) : 'expectedEndDate';
+    const sortOrder = String(order).toLowerCase() === 'desc' ? 'desc' : 'asc';
+    
+    // FIX: Use a properly typed object for orderBy
+    const orderBy: Prisma.JobOrderByWithRelationInput = {};
+    // Create a typed object for dynamic property access
+    const typedOrderBy: Record<string, Prisma.SortOrder> = {};
+    typedOrderBy[sortField] = sortOrder as Prisma.SortOrder;
+    
+    if (sortField === 'expectedEndDate') { // Handle nulls for expectedEndDate
+        orderBy.expectedEndDate = { sort: sortOrder as Prisma.SortOrder, nulls: sortOrder === 'asc' ? 'last' : 'first'};
+    } else {
+        // Use the typed object to assign to orderBy
+        Object.assign(orderBy, typedOrderBy);
+    }
 
     const jobs = await prisma.job.findMany({
       where,
-      include: {
-        customer: true,
-        orders: true,
-        assignedUsers: {
-          include: {
-            user: {
-              select: { 
-                id: true, 
-                name: true 
-              }
-            }
-          }
-        }
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        createdAt: true,
+        expectedEndDate: true,
+        // estimatedCost: true, // REMOVED
+        status: true,
+        customer: { select: { id: true, name: true } },
+        costs: { select: { amount: true } },
+        _count: { select: { orders: true, materials: true }}
       },
-      skip: (Number(page) - 1) * Number(limit),
-      take: Number(limit),
-      orderBy: { createdAt: 'desc' }
+      skip: skip,
+      take: limitNum,
+      orderBy: [orderBy] // orderBy should be an array
     });
 
-    const total = await prisma.job.count({ where });
+    const totalJobs = await prisma.job.count({ where });
 
-    // Manually add totalCosts to each job
-    const jobsWithTotalCosts = jobs.map(job => ({
-      ...job,
-      totalCosts: 0 // Default value until actual calculation is implemented
-    }));
+    const augmentedJobs = jobs.map(job => {
+        const totalActualCost = job.costs.reduce((sum, cost) => sum + cost.amount, 0);
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { costs, ...jobWithoutCosts } = job;
+        return { 
+          ...jobWithoutCosts, 
+          totalActualCost, 
+          orderCount: job._count.orders,
+          materialCount: job._count.materials 
+        };
+    });
 
-    res.json({
-      jobs: jobsWithTotalCosts,
+    res.status(200).json({
+      jobs: augmentedJobs,
       pagination: {
-        currentPage: Number(page),
-        totalPages: Math.ceil(total / Number(limit)),
-        totalJobs: total
+        currentPage: pageNum,
+        totalPages: Math.ceil(totalJobs / limitNum),
+        totalItems: totalJobs,
+        pageSize: limitNum
       }
     });
-  } catch (error) {
-    console.error('Get jobs error:', error);
-    // Fallback for error case - return empty array
-    res.json({
-      jobs: [],
-      pagination: {
-        currentPage: Number(req.query.page || 1),
-        totalPages: 1,
-        totalJobs: 0
-      }
-    });
+
+  } catch (error: any) {
+    console.error('[JobController][getJobs] Error:', error);
+    res.status(500).json({ message: 'Failed to fetch jobs.', error: error.message });
   }
 };
 
-// Get a specific job by ID
-export const getJobById = async (req: Request, res: Response) => {
+export const updateJob = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id: jobId } = req.params;
+    const userId = req.user?.id;
+    const {
+      title, description, status, startDate, expectedEndDate, customerId,
+      // estimatedCost, actualEndDate, actualCost, assignedUserIds (fields not on Job model or relations not defined)
+    } = req.body;
+    console.log(`[JobController][updateJob] Attempting for job ${jobId} by user ${userId}. Body:`, req.body);
+
+     if (!userId) return res.status(401).json({ message: 'User not authenticated' });
+
+    const currentJob = await prisma.job.findUnique({ where: { id: jobId } });
+    if (!currentJob) return res.status(404).json({ message: 'Job not found' });
+
+    const updateData: Prisma.JobUpdateInput = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description === null ? null : description; // Allow setting to null
+    if (status !== undefined) updateData.status = status as JobStatus;
+    if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
+    if (expectedEndDate !== undefined) updateData.expectedEndDate = expectedEndDate ? new Date(expectedEndDate) : null;
+    // if (estimatedCost !== undefined) updateData.estimatedCost = estimatedCost !== null ? parseFloat(estimatedCost) : null;
+    // if (actualEndDate !== undefined) updateData.actualEndDate = actualEndDate ? new Date(actualEndDate) : null;
+    // if (actualCost !== undefined) updateData.actualCost = actualCost !== null ? parseFloat(actualCost) : null;
+
+    if (customerId !== undefined) {
+        if (customerId === null) { // Allow unsetting customer if schema allows (customerId String?)
+            // updateData.customer = { disconnect: true }; // If customerId is optional on Job
+        } else {
+            const customerExists = await prisma.customer.findUnique({where: {id: customerId}});
+            if (!customerExists) return res.status(400).json({message: `Customer with ID ${customerId} not found.`});
+            updateData.customer = { connect: { id: customerId }};
+        }
+    }
+
+    const updatedJob = await prisma.job.update({
+      where: { id: jobId },
+      data: updateData,
+      include: { customer: { select: { id: true, name: true } }, orders: { select: { id: true, projectTitle: true } } }
+    });
+
+    console.log(`[JobController][updateJob] Job ${jobId} updated successfully.`);
+    res.status(200).json(updatedJob);
+
+  } catch (error: any) {
+    console.error(`[JobController][updateJob] Error for ID ${req.params.id}:`, error);
+     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+         return res.status(404).json({ message: `Job with ID ${req.params.id} not found.` });
+     }
+    res.status(500).json({ message: 'Failed to update job', details: error.message });
+  }
+};
+
+export const getJobById = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    console.log(`[JobController][getJobById] Fetching job ${id}`);
 
     const job = await prisma.job.findUnique({
       where: { id },
       include: {
-        customer: true,
-        orders: true,
-        assignedUsers: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true
+          }
+        },
+        orders: {
           include: {
-            user: {
-              select: { 
-                id: true, 
-                name: true 
+            createdBy: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            },
+            projectOwner: {
+              select: {
+                id: true,
+                name: true,
+                email: true
               }
             }
           }
         },
-        materialUsed: {
-          include: {
-            material: true
+        costs: {
+          orderBy: {
+            costDate: 'desc'
           }
         },
-        notes: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
-      }
-    });
-
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    // Add missing totalCosts
-    const jobWithTotalCosts = {
-      ...job,
-      totalCosts: 0 // Default value
-    };
-
-    res.json(jobWithTotalCosts);
-  } catch (error) {
-    console.error('Get job by ID error:', error);
-    res.status(500).json({ error: 'Failed to fetch job details' });
-  }
-};
-
-// Delete a job
-export const deleteJob = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    // Optional: Add additional validation before deletion
-    const job = await prisma.job.findUnique({ where: { id } });
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    // Prevent deletion of active jobs
-    if (job.status !== 'DRAFT' && job.status !== 'CANCELLED') {
-      return res.status(400).json({ error: 'Cannot delete an active job' });
-    }
-
-    // Delete the job
-    await prisma.job.delete({
-      where: { id }
-    });
-
-    res.status(204).send(); // No content
-  } catch (error) {
-    console.error('Job deletion error:', error);
-    res.status(500).json({ error: 'Failed to delete job' });
-  }
-};
-
-// Get available orders for job creation - MODIFIED to show all available orders
-export const getAvailableOrders = async (req: Request, res: Response) => {
-  try {
-    console.log("Fetching available orders...");
-    
-    const orders = await prisma.order.findMany({
-      where: {
-        // Find orders without an associated job
-        jobId: null,
-        // Removed status requirement to allow all orders
-      },
-      include: {
-        customer: true
-      }
-    });
-    
-    console.log(`Found ${orders.length} available orders`);
-    console.log("Available orders:", orders.map(o => ({
-      id: o.id,
-      title: o.projectTitle,
-      status: o.status
-    })));
-    
-    res.json(orders);
-  } catch (error) {
-    console.error('Available orders error:', error);
-    res.status(500).json({ error: 'Failed to fetch available orders' });
-  }
-};
-
-// Get available users for job assignment
-export const getAvailableUsers = async (req: Request, res: Response) => {
-  try {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true
-      }
-    });
-
-    res.json(users);
-  } catch (error) {
-    console.error('Available users error:', error);
-    res.status(500).json({ error: 'Failed to fetch available users' });
-  }
-};
-
-// Add a note to a job
-export const addJobNote = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { content } = req.body;
-
-    if (!content) {
-      return res.status(400).json({ error: 'Note content is required' });
-    }
-
-    const note = await prisma.jobNote.create({
-      data: {
-        jobId: id,
-        authorId: req.user?.id, // Assuming authenticated user
-        content
-      },
-      include: {
-        author: {
-          select: {
-            id: true,
-            name: true
+        // Include materials with their details
+        materials: {
+          include: {
+            material: {
+              include: {
+                supplier: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
           }
         }
       }
     });
 
-    res.status(201).json(note);
-  } catch (error) {
-    console.error('Add job note error:', error);
-    res.status(500).json({ error: 'Failed to add job note' });
+    if (!job) {
+      return res.status(404).json({ message: `Job with ID ${id} not found` });
+    }
+
+    // Calculate material totals
+    const materialTotals = {
+      totalMaterials: job.materials.length,
+      totalMaterialCost: job.materials.reduce((sum, jm) => sum + (jm.totalCost || 0), 0),
+      totalQuantityNeeded: job.materials.reduce((sum, jm) => sum + jm.quantityNeeded, 0),
+      totalQuantityUsed: job.materials.reduce((sum, jm) => sum + jm.quantityUsed, 0)
+    };
+
+    // Calculate financial totals including material costs
+    const orderTotal = job.orders.reduce((sum, order) => sum + order.totalAmount, 0);
+    const costTotal = job.costs.reduce((sum, cost) => sum + cost.amount, 0);
+    const materialCostTotal = materialTotals.totalMaterialCost;
+    
+    // Map material fields for frontend compatibility
+    const jobWithMappedMaterials = {
+      ...job,
+      materials: job.materials.map(jobMaterial => ({
+        ...jobMaterial,
+        material: {
+          ...jobMaterial.material,
+          minStockLevel: jobMaterial.material.minStock,
+          currentStockLevel: jobMaterial.material.currentStock
+        }
+      })),
+      materialTotals,
+      totals: {
+        orderTotal,
+        costTotal,
+        materialCostTotal,
+        totalCosts: costTotal + materialCostTotal,
+        estimatedProfit: orderTotal - (costTotal + materialCostTotal)
+      }
+    };
+
+    res.status(200).json(jobWithMappedMaterials);
+  } catch (error: any) {
+    console.error(`[JobController][getJobById] Error for ${req.params.id}:`, error);
+    res.status(500).json({ message: 'Failed to fetch job details', details: error.message });
   }
 };
 
-// Get job statistics for dashboard
-export const getJobStats = async (req: Request, res: Response) => {
+export const deleteJob = async (req: AuthRequest, res: Response) => {
   try {
-    console.log("Fetching job stats from database...");
-    const jobStats = await prisma.job.groupBy({
-      by: ['status'],
-      _count: {
-        status: true
-      }
+    const { id: jobId } = req.params;
+    const userId = req.user?.id;
+    console.log(`[JobController][deleteJob] User ${userId} attempting to delete job ${jobId}`);
+
+    const job = await prisma.job.findUnique({
+        where: { id: jobId },
+        select: { status: true, orders: { select: { id: true }} }
     });
+
+    if (!job) return res.status(404).json({ message: `Job not found with ID ${jobId}` });
+
+    if (job.status !== JobStatus.DRAFT && job.status !== JobStatus.CANCELED) {
+        console.warn(`[JobController][deleteJob] Attempt to delete job ${jobId} with status ${job.status}. Restricted.`);
+        return res.status(400).json({ message: `Cannot delete job: Only DRAFT or CANCELLED jobs can be deleted.` });
+    }
     
-    console.log("Raw job stats from database:", jobStats);
+    if (job.orders.length > 0) { // Check if orders are linked
+        await prisma.order.updateMany({
+            where: { jobId: jobId },
+            data: { jobId: null } // Unlink orders
+        });
+        console.log(`[JobController][deleteJob] Unlinked job ${jobId} from ${job.orders.length} order(s).`);
+    }
+    // Assuming JobCost has onDelete: Cascade or will be handled separately if needed.
 
-    // Transform to the expected format
-    const stats = {
-      draft: 0,
-      pending: 0,
-      inProgress: 0,
-      completed: 0,
-      cancelled: 0
-    };
+    await prisma.job.delete({ where: { id: jobId } });
+    console.log(`[JobController][deleteJob] Job ${jobId} deleted successfully.`);
+    res.status(204).send();
 
-    jobStats.forEach(stat => {
-      const status = stat.status.toLowerCase();
-      console.log(`Processing status: ${status} with count: ${stat._count.status}`);
-      if (status === 'draft') stats.draft = stat._count.status;
-      if (status === 'pending') stats.pending = stat._count.status;
-      if (status === 'in_progress') stats.inProgress = stat._count.status;
-      if (status === 'completed') stats.completed = stat._count.status;
-      if (status === 'cancelled') stats.cancelled = stat._count.status;
+  } catch (error: any) {
+    console.error(`[JobController][deleteJob] Error for ID ${req.params.id}:`, error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2025') return res.status(404).json({ message: `Job with ID ${req.params.id} not found.` });
+        console.error(`[JobController][deleteJob] Prisma Error Code: ${error.code}`);
+    }
+    res.status(500).json({ message: 'Failed to delete job', details: error.message });
+  }
+};
+
+export const getAvailableOrders = async (req: AuthRequest, res: Response) => {
+  try {
+    console.log("[JobController][getAvailableOrders] Fetching orders not yet linked to a job.");
+    const orders = await prisma.order.findMany({
+      where: { jobId: null },
+      select: {
+          id: true, projectTitle: true, quoteRef: true, customerName: true, status: true, customerId: true,
+          customer: { select: { name: true }}
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    console.log(`[JobController][getAvailableOrders] Found ${orders.length} available orders.`);
+    res.status(200).json(orders);
+  } catch (error: any) {
+    console.error('[JobController][getAvailableOrders] Error:', error);
+    res.status(500).json({ message: 'Failed to fetch available orders', details: error.message });
+  }
+};
+
+export const getAvailableUsers = async (req: AuthRequest, res: Response) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true },
+      orderBy: { name: 'asc' }
+    });
+    res.status(200).json(users);
+  } catch (error: any) {
+    console.error('[JobController][getAvailableUsers] Error:', error);
+    res.status(500).json({ message: 'Failed to fetch available users', details: error.message });
+  }
+};
+
+// addJobNote is still commented out as JobNote model is not in schema.prisma
+/*
+export const addJobNote = async (req: AuthRequest, res: Response) => { ... };
+*/
+
+export const getJobStats = async (req: AuthRequest, res: Response) => {
+  try {
+    console.log("[JobController][getJobStats] Fetching job stats grouped by status...");
+    const jobStatsGrouped = await prisma.job.groupBy({
+      by: ['status'],
+      _count: { id: true }
     });
 
-    console.log("Transformed job stats:", stats);
-    res.json(stats);
-  } catch (error) {
-    console.error('Error fetching job stats:', error);
-    res.status(500).json({ error: 'Failed to fetch job statistics' });
+    const stats: Record<string, number> = {};
+    Object.values(JobStatus).forEach(statusValue => {
+        stats[statusValue] = 0;
+    });
+
+    jobStatsGrouped.forEach(stat => {
+      if (stat.status) stats[stat.status] = stat._count.id;
+    });
+
+    console.log("[JobController][getJobStats] Transformed job stats:", stats);
+    res.status(200).json(stats);
+  } catch (error: any) {
+    console.error('[JobController][getJobStats] Error:', error);
+    res.status(500).json({ message: 'Failed to fetch job statistics', details: error.message });
   }
 };

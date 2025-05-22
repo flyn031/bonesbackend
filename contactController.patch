@@ -1,0 +1,5 @@
+--- src/controllers/contactController.ts
++++ src/controllers/contactController.ts
+@@ -239,2 +239,2 @@
+-                 if (role !== null && role !== '') validatedRole = role as ContactRole;
++                 if (role !== null && role !== undefined && typeof role === 'string' && role !== '') validatedRole = role as ContactRole;
