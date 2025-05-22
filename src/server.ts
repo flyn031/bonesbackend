@@ -22,6 +22,9 @@ import inventoryRoutes from './routes/inventory';
 // ADD THIS LINE: Import employee routes
 import employeeRoutes from './routes/employeeRoutes';
 
+// 🚀 NEW: Import time entry routes for HMRC R&D
+import timeEntryRoutes from './routes/timeEntries';
+
 dotenv.config();
 const app = express();
 const prisma = new PrismaClient();
@@ -140,6 +143,10 @@ app.use('/api/audit', auditRoutes);
 
 console.log('🔧 [SERVER] Registering employee routes...');
 app.use('/api/employees', employeeRoutes);
+
+// 🚀 NEW: Register time entry routes for HMRC R&D functionality
+console.log('🔧 [SERVER] Registering time entry routes (HMRC R&D)...');
+app.use('/api/time-entries', timeEntryRoutes);
 
 // Basic health check endpoint
 app.get('/health', async (req, res) => {

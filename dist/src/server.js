@@ -33,6 +33,8 @@ const audit_1 = __importDefault(require("./routes/audit"));
 const inventory_1 = __importDefault(require("./routes/inventory"));
 // ADD THIS LINE: Import employee routes
 const employeeRoutes_1 = __importDefault(require("./routes/employeeRoutes"));
+// 🚀 NEW: Import time entry routes for HMRC R&D
+const timeEntries_1 = __importDefault(require("./routes/timeEntries"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 exports.app = app;
@@ -129,6 +131,9 @@ console.log('🔧 [SERVER] Registering audit routes...');
 app.use('/api/audit', audit_1.default);
 console.log('🔧 [SERVER] Registering employee routes...');
 app.use('/api/employees', employeeRoutes_1.default);
+// 🚀 NEW: Register time entry routes for HMRC R&D functionality
+console.log('🔧 [SERVER] Registering time entry routes (HMRC R&D)...');
+app.use('/api/time-entries', timeEntries_1.default);
 // Basic health check endpoint
 app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
