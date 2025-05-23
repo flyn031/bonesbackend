@@ -7,14 +7,14 @@ import {
     createEmployee,
     updateEmployee,
     deleteEmployee
-} from '../../backend/src/controllers/employeeController';  // Updated path to point to backend/src
+} from '../controllers/employeeController';  // Fixed path - removed ../../backend/src
 
 const router = Router();
 
 // Apply authentication middleware to all routes
 router.use(authenticateToken);
 
-// Get all employees
+// Get all employees (used for time tracking employee selection)
 router.get('/', getAllEmployees);
 
 // Get employee by ID

@@ -3,11 +3,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // src/routes/employeeRoutes.ts
 const express_1 = require("express");
 const authMiddleware_1 = require("../middleware/authMiddleware");
-const employeeController_1 = require("../../backend/src/controllers/employeeController"); // Updated path to point to backend/src
+const employeeController_1 = require("../controllers/employeeController"); // Fixed path - removed ../../backend/src
 const router = (0, express_1.Router)();
 // Apply authentication middleware to all routes
 router.use(authMiddleware_1.authenticateToken);
-// Get all employees
+// Get all employees (used for time tracking employee selection)
 router.get('/', employeeController_1.getAllEmployees);
 // Get employee by ID
 router.get('/:id', employeeController_1.getEmployeeById);

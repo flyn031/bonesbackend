@@ -18,6 +18,7 @@ model User {
   role            Role           @default(USER)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+  timeEntries     TimeEntry[]    // ✅ ADDED: Link to time entries
   createdOrders   Order[]        @relation("CreatedBy")
   managedOrders   Order[]        @relation("ProjectOwner")
   createdQuotes   Quote[]        // Relation to quotes created by this user
@@ -46,9 +47,6 @@ model Employee {
   hireDate              DateTime?
   terminationDate       DateTime?
   notes                 String?
-
-  // Relation to TimeEntry (to track hours for this employee)
-  timeEntries           TimeEntry[]
 
   // Optional: Link to a User if this employee also logs into the system
   user                  User?
@@ -356,6 +354,7 @@ model CompanySettings {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
+
 model Quote {
   id                  String         @id @default(cuid())
   title               String
@@ -565,7 +564,7 @@ model Document {
 model TimeEntry {
   id              String    @id @default(cuid())
   employeeId      String    @map("employee_id")
-  employee        Employee  @relation(fields: [employeeId], references: [id]) // Link to the Employee model
+  employee        User      @relation(fields: [employeeId], references: [id]) // ✅ FIXED: Links to User now
 
   jobId           String    @map("job_id")
   job             Job       @relation(fields: [jobId], references: [id]) // Link to your existing Job model

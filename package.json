@@ -2,11 +2,11 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/src/server.js",
+  "main": "dist/server.js",
   "scripts": {
     "build:dev": "npx prisma generate && tsc",
-    "dev": "npm run build:dev && node dist/src/server.js",
-    "start": "node dist/src/server.js",
+    "dev": "npm run build:dev && node dist/server.js",
+    "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

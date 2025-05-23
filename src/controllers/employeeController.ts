@@ -7,15 +7,33 @@ import { Role } from '@prisma/client';
 
 export const getAllEmployees = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        // Fix for the role issue - using an appropriate existing role from the enum
+        // Get all users who can be employees (exclude customer-only roles if any)
         const employees = await prisma.user.findMany({
             where: { 
-                // Using equals filter with an existing role from the enum
-                role: Role.USER 
+                // Include all employee roles that can track time
+                role: { 
+                    in: [Role.USER, Role.ADMIN] // Only roles that exist in your schema
+                }
+            },
+            select: {
+                id: true,
+                name: true, 
+                email: true,
+                role: true,
+                // Add other fields you want in the dropdown
+                createdAt: true
+            },
+            orderBy: {
+                name: 'asc' // Sort alphabetically for better UX
             }
         });
-        res.json(employees);
+        
+        console.log('🔍 Backend found employees:', employees.length);
+        
+        // *** THIS IS THE KEY FIX: Return wrapped format ***
+        res.json({ employees });
     } catch (error) {
+        console.error('Error fetching employees:', error);
         next(error);
     }
 };
@@ -24,7 +42,14 @@ export const getEmployeeById = async (req: AuthRequest, res: Response, next: Nex
     try {
         const { id } = req.params;
         const employee = await prisma.user.findUnique({
-            where: { id }
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                createdAt: true,
+            }
         });
         
         if (!employee) {
@@ -46,7 +71,7 @@ export const createEmployee = async (req: AuthRequest, res: Response, next: Next
             data: {
                 name,
                 email,
-                role: Role.USER, // Changed from 'EMPLOYEE' to a valid role
+                role: Role.USER,
                 ...data
             }
         });

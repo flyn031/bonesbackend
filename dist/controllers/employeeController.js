@@ -29,16 +29,32 @@ const prismaClient_1 = __importDefault(require("../utils/prismaClient"));
 const client_1 = require("@prisma/client");
 const getAllEmployees = (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        // Fix for the role issue - using an appropriate existing role from the enum
+        // Get all users who can be employees (exclude customer-only roles if any)
         const employees = yield prismaClient_1.default.user.findMany({
             where: {
-                // Using equals filter with an existing role from the enum
-                role: client_1.Role.USER
+                // Include all employee roles that can track time
+                role: {
+                    in: [client_1.Role.USER, client_1.Role.ADMIN] // Only roles that exist in your schema
+                }
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                // Add other fields you want in the dropdown
+                createdAt: true
+            },
+            orderBy: {
+                name: 'asc' // Sort alphabetically for better UX
             }
         });
-        res.json(employees);
+        console.log('🔍 Backend found employees:', employees.length);
+        // *** THIS IS THE KEY FIX: Return wrapped format ***
+        res.json({ employees });
     }
     catch (error) {
+        console.error('Error fetching employees:', error);
         next(error);
     }
 });
@@ -47,7 +63,14 @@ const getEmployeeById = (req, res, next) => __awaiter(void 0, void 0, void 0, fu
     try {
         const { id } = req.params;
         const employee = yield prismaClient_1.default.user.findUnique({
-            where: { id }
+            where: { id },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                createdAt: true,
+            }
         });
         if (!employee) {
             res.status(404).json({ message: 'Employee not found' });

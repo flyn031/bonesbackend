@@ -41,13 +41,13 @@ class TimeEntryService {
       throw new Error('R&D activities require a description for HMRC compliance');
     }
 
-    // Check if employee exists
-    const employee = await prisma.employee.findUnique({
+    // Check if user/employee exists (changed from employee to user)
+    const user = await prisma.user.findUnique({
       where: { id: data.employeeId },
     });
 
-    if (!employee) {
-      throw new Error('Employee not found');
+    if (!user) {
+      throw new Error('User not found');
     }
 
     // Check if job exists
@@ -85,7 +85,7 @@ class TimeEntryService {
         employee: {
           select: {
             name: true,
-            jobTitle: true,
+            role: true, // ✅ FIXED: Changed from jobTitle to role
           },
         },
         job: {
@@ -136,7 +136,7 @@ class TimeEntryService {
         employee: {
           select: {
             name: true,
-            jobTitle: true,
+            role: true, // ✅ FIXED: Changed from jobTitle to role
           },
         },
         job: {
@@ -166,7 +166,7 @@ class TimeEntryService {
         employee: {
           select: {
             name: true,
-            jobTitle: true,
+            role: true, // ✅ FIXED: Changed from jobTitle to role
           },
         },
         job: {
@@ -219,7 +219,7 @@ class TimeEntryService {
         employee: {
           select: {
             name: true,
-            jobTitle: true,
+            role: true, // ✅ FIXED: Changed from jobTitle to role
           },
         },
         job: {
@@ -269,7 +269,7 @@ class TimeEntryService {
         employee: {
           select: {
             name: true,
-            jobTitle: true,
+            role: true, // ✅ FIXED: Changed from jobTitle to role
           },
         },
         job: {

@@ -27,12 +27,12 @@ class TimeEntryService {
             if (data.isRdActivity && !((_a = data.rdDescription) === null || _a === void 0 ? void 0 : _a.trim())) {
                 throw new Error('R&D activities require a description for HMRC compliance');
             }
-            // Check if employee exists
-            const employee = yield prisma.employee.findUnique({
+            // Check if user/employee exists (changed from employee to user)
+            const user = yield prisma.user.findUnique({
                 where: { id: data.employeeId },
             });
-            if (!employee) {
-                throw new Error('Employee not found');
+            if (!user) {
+                throw new Error('User not found');
             }
             // Check if job exists
             const job = yield prisma.job.findUnique({
@@ -65,7 +65,7 @@ class TimeEntryService {
                     employee: {
                         select: {
                             name: true,
-                            jobTitle: true,
+                            role: true, // ✅ FIXED: Changed from jobTitle to role
                         },
                     },
                     job: {
@@ -112,7 +112,7 @@ class TimeEntryService {
                     employee: {
                         select: {
                             name: true,
-                            jobTitle: true,
+                            role: true, // ✅ FIXED: Changed from jobTitle to role
                         },
                     },
                     job: {
@@ -143,7 +143,7 @@ class TimeEntryService {
                     employee: {
                         select: {
                             name: true,
-                            jobTitle: true,
+                            role: true, // ✅ FIXED: Changed from jobTitle to role
                         },
                     },
                     job: {
@@ -191,7 +191,7 @@ class TimeEntryService {
                     employee: {
                         select: {
                             name: true,
-                            jobTitle: true,
+                            role: true, // ✅ FIXED: Changed from jobTitle to role
                         },
                     },
                     job: {
@@ -240,7 +240,7 @@ class TimeEntryService {
                     employee: {
                         select: {
                             name: true,
-                            jobTitle: true,
+                            role: true, // ✅ FIXED: Changed from jobTitle to role
                         },
                     },
                     job: {
