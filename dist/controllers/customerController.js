@@ -346,8 +346,19 @@ const getCustomers = (req, res, next) => __awaiter(void 0, void 0, void 0, funct
         const customers = yield prismaClient_1.default.customer.findMany({
             where: filter,
             include: {
-                // Simplified includes to avoid totalCosts reference
+                // ✅ CONFIRMED: Filter jobs with valid JobStatus values from database
                 jobs: {
+                    where: {
+                        status: {
+                            in: [
+                                client_1.JobStatus.ACTIVE,
+                                client_1.JobStatus.DRAFT,
+                                client_1.JobStatus.PENDING,
+                                client_1.JobStatus.IN_PROGRESS,
+                                client_1.JobStatus.CANCELED
+                            ]
+                        }
+                    },
                     select: {
                         id: true,
                         title: true,
@@ -400,8 +411,19 @@ const getCustomer = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
         const customer = yield prismaClient_1.default.customer.findUnique({
             where: { id },
             include: {
-                // Simplified includes to avoid totalCosts reference
+                // ✅ CONFIRMED: Filter jobs with valid JobStatus values from database
                 jobs: {
+                    where: {
+                        status: {
+                            in: [
+                                client_1.JobStatus.ACTIVE,
+                                client_1.JobStatus.DRAFT,
+                                client_1.JobStatus.PENDING,
+                                client_1.JobStatus.IN_PROGRESS,
+                                client_1.JobStatus.CANCELED
+                            ]
+                        }
+                    },
                     select: {
                         id: true,
                         title: true,

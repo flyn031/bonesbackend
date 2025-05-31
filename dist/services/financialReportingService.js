@@ -62,10 +62,10 @@ class FinancialReportingService {
                 // Use provided dates or default to current month
                 const start = startDate || (0, date_fns_1.startOfMonth)(new Date());
                 const end = endDate || (0, date_fns_1.endOfMonth)(new Date());
-                // Total Revenue (all completed orders within date range)
+                // ✅ FIXED: Total Revenue (all COMPLETED orders within date range)
                 const totalRevenueResult = yield this.prisma.order.aggregate({
                     where: {
-                        status: 'COMPLETED',
+                        status: client_1.OrderStatus.COMPLETED, // ✅ FIXED: Use valid OrderStatus from database
                         createdAt: {
                             gte: start,
                             lte: end
@@ -73,10 +73,10 @@ class FinancialReportingService {
                     },
                     _sum: { totalAmount: true }
                 });
-                // Monthly Revenue (current month)
+                // ✅ FIXED: Monthly Revenue (current month COMPLETED orders)
                 const monthlyRevenueResult = yield this.prisma.order.aggregate({
                     where: {
-                        status: 'COMPLETED',
+                        status: client_1.OrderStatus.COMPLETED, // ✅ FIXED: Use valid OrderStatus from database
                         createdAt: {
                             gte: (0, date_fns_1.startOfMonth)(new Date()),
                             lte: (0, date_fns_1.endOfMonth)(new Date())
@@ -135,10 +135,10 @@ class FinancialReportingService {
                     _sum: { amount: true }
                 });
                 const pendingInvoices = ((_c = pendingInvoicesResult._sum) === null || _c === void 0 ? void 0 : _c.amount) || 0;
-                // Recent Transactions
+                // ✅ FIXED: Recent Transactions with proper customer relation
                 const recentTransactions = yield this.prisma.order.findMany({
                     where: {
-                        status: 'COMPLETED'
+                        status: client_1.OrderStatus.COMPLETED // ✅ FIXED: Use valid OrderStatus from database
                     },
                     take: 10,
                     orderBy: { createdAt: 'desc' },
@@ -147,6 +147,7 @@ class FinancialReportingService {
                         createdAt: true,
                         totalAmount: true,
                         customerName: true,
+                        // ✅ FIXED: Include customer relation properly
                         customer: {
                             select: {
                                 name: true
@@ -161,7 +162,6 @@ class FinancialReportingService {
                 }
                 // Format transactions with safe date handling
                 const formattedTransactions = recentTransactions.map(transaction => {
-                    var _a;
                     let dateStr;
                     try {
                         dateStr = (0, date_fns_1.format)(new Date(transaction.createdAt), 'dd/MM/yyyy');
@@ -172,7 +172,8 @@ class FinancialReportingService {
                     }
                     return {
                         id: transaction.id,
-                        description: `Sale to ${((_a = transaction.customer) === null || _a === void 0 ? void 0 : _a.name) || transaction.customerName || 'Customer'}`,
+                        // ✅ FIXED: Safe customer name access with fallback
+                        description: `Sale to ${transaction.customerName || 'Customer'}`,
                         amount: transaction.totalAmount,
                         date: dateStr
                     };

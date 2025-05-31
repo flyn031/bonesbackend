@@ -1,4 +1,4 @@
-// schema.prisma
+// schema.prisma - MATCHES YOUR CURRENT DATABASE
 
 generator client {
   provider = "prisma-client-js"
@@ -183,7 +183,7 @@ model Order {
   projectTitle         String
   quoteRef             String
   orderType            OrderType        @default(CUSTOMER_LINKED)
-  status               OrderStatus      @default(DRAFT)
+  status               OrderStatus      @default(IN_PRODUCTION)
   customerName         String
   contactPerson        String?
   contactPhone         String?
@@ -596,27 +596,22 @@ enum OrderType {
   INTERNAL
 }
 
+// ✅ MATCHES YOUR CURRENT DATABASE
 enum OrderStatus {
-  DRAFT
-  PENDING_APPROVAL
-  APPROVED
-  DECLINED
   IN_PRODUCTION
   ON_HOLD
   READY_FOR_DELIVERY
   DELIVERED
   COMPLETED
-  CANCELLED
 }
 
+// ✅ MATCHES YOUR CURRENT DATABASE
 enum JobStatus {
   ACTIVE
-  COMPLETED
-  CANCELED
-  ON_HOLD
-  PENDING
   DRAFT
+  PENDING
   IN_PROGRESS
+  CANCELED
 }
 
 enum ImportStatus {

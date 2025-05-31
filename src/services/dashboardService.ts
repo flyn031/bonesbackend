@@ -14,12 +14,15 @@ export const getDashboardStats = async () => {
 
     // Fetch core stats in parallel
     const [activeOrders, totalSuppliers, monthlyRevenue, totalCustomers] = await Promise.all([
+      // ✅ FIXED: Use actual OrderStatus values from your database
       prisma.order.count({
         where: {
           status: {
             in: [
-              OrderStatus.DRAFT, OrderStatus.PENDING_APPROVAL, OrderStatus.APPROVED,
-              OrderStatus.IN_PRODUCTION, OrderStatus.ON_HOLD, OrderStatus.READY_FOR_DELIVERY
+              OrderStatus.IN_PRODUCTION, 
+              OrderStatus.ON_HOLD, 
+              OrderStatus.READY_FOR_DELIVERY
+              // These represent "active" orders in progress
             ]
           }
         }
@@ -27,9 +30,10 @@ export const getDashboardStats = async () => {
       prisma.supplier.count({
         where: { status: SupplierStatus.ACTIVE } // Verified against schema
       }),
+      // ✅ FIXED: Use COMPLETED for revenue calculation (final status)
       prisma.order.aggregate({
         where: {
-          status: OrderStatus.COMPLETED, // Verified against schema
+          status: OrderStatus.COMPLETED, // ✅ FIXED: Use COMPLETED for revenue
           createdAt: { gte: startOfMonth, lte: endOfMonth } // Verified field 'createdAt'
         },
         _sum: { totalAmount: true } // Verified field 'totalAmount' is Float
@@ -110,7 +114,6 @@ export const getOrderTrends = async () => {
 };
 
 // --- Function to get data for the new KPI Card ---
-// (This remains unchanged from the version you pasted)
 export const getOrderTrendKPI = async () => {
   try {
     console.log('[Dashboard] Fetching order trend KPI data');
@@ -126,7 +129,8 @@ export const getOrderTrendKPI = async () => {
     const currentPeriodData = await prisma.order.aggregate({
       where: {
         createdAt: { gte: startOfCurrentMonth, lte: endOfCurrentPeriod },
-        status: { notIn: [OrderStatus.DRAFT, OrderStatus.CANCELLED] } // Exclude non-revenue relevant
+        // ✅ FIXED: Include all revenue-generating orders (all statuses represent value)
+        // Since all your OrderStatus values represent orders with value, include all
       },
       _sum: { totalAmount: true },
     });
@@ -149,7 +153,7 @@ export const getOrderTrendKPI = async () => {
     const previousPeriodData = await prisma.order.aggregate({
       where: {
         createdAt: { gte: startOfPreviousMonth, lte: endOfPreviousPeriod },
-        status: { notIn: [OrderStatus.DRAFT, OrderStatus.CANCELLED] }
+        // ✅ FIXED: Include all revenue-generating orders
       },
       _sum: { totalAmount: true },
     });

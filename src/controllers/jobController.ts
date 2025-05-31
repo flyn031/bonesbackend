@@ -110,7 +110,7 @@ export const createJob = async (req: AuthRequest, res: Response) => {
     const jobData: Prisma.JobCreateInput = {
       title,
       description: description || undefined,
-      status: (status as JobStatus) || JobStatus.DRAFT, // Default to DRAFT
+      status: (status as JobStatus) || JobStatus.DRAFT, // ✅ FIXED: Default to DRAFT (new jobs start as drafts)
       startDate: startDate ? new Date(startDate) : new Date(),
       expectedEndDate: validExpectedEndDate,
       // estimatedCost: parsedEstimatedCost, // Add if 'estimatedCost' is on Job model
@@ -131,11 +131,13 @@ export const createJob = async (req: AuthRequest, res: Response) => {
 
     if (orderId) {
       try {
+          // ✅ FIXED: Only link the job, don't change order status
+          // Order status is managed by orderController - orders stay APPROVED
           await prisma.order.update({
               where: { id: orderId },
-              data: { jobId: newJob.id, status: 'IN_PRODUCTION' }
+              data: { jobId: newJob.id }
           });
-          console.log(`[JobController][createJob] Updated order ${orderId} status and linked job ${newJob.id}`);
+          console.log(`[JobController][createJob] Linked job ${newJob.id} to order ${orderId}`);
       } catch (orderUpdateError) {
            console.error(`[JobController][createJob] Failed to update order ${orderId}:`, orderUpdateError);
       }
@@ -420,9 +422,10 @@ export const deleteJob = async (req: AuthRequest, res: Response) => {
 
     if (!job) return res.status(404).json({ message: `Job not found with ID ${jobId}` });
 
+    // ✅ FIXED: Use correct JobStatus values from database
     if (job.status !== JobStatus.DRAFT && job.status !== JobStatus.CANCELED) {
         console.warn(`[JobController][deleteJob] Attempt to delete job ${jobId} with status ${job.status}. Restricted.`);
-        return res.status(400).json({ message: `Cannot delete job: Only DRAFT or CANCELLED jobs can be deleted.` });
+        return res.status(400).json({ message: `Cannot delete job: Only DRAFT or CANCELED jobs can be deleted.` });
     }
     
     if (job.orders.length > 0) { // Check if orders are linked

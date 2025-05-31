@@ -21,7 +21,7 @@ class JobService {
     // Calculate job performance metrics
     getJobPerformanceMetrics(jobId) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c;
+            var _a, _b, _c, _d;
             const job = yield prismaClient_1.default.job.findUnique({
                 where: { id: jobId },
                 include: {
@@ -35,9 +35,9 @@ class JobService {
             if (!job) {
                 throw new Error('Job not found');
             }
-            // Derive actualEndDate from history if not directly on job
-            const actualEndDateEntry = (_a = job.history) === null || _a === void 0 ? void 0 : _a.find(h => h.status === client_1.JobStatus.COMPLETED.toString());
-            const actualEndDate = actualEndDateEntry ? (0, dayjs_1.default)(actualEndDateEntry.createdAt) : (0, dayjs_1.default)(); // Use createdAt of completed status
+            // ✅ FIXED: Since no COMPLETED status exists, use most recent history entry for end date
+            const mostRecentHistoryEntry = (_b = (_a = job.history) === null || _a === void 0 ? void 0 : _a.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) === null || _b === void 0 ? void 0 : _b[0];
+            const actualEndDate = mostRecentHistoryEntry ? (0, dayjs_1.default)(mostRecentHistoryEntry.createdAt) : (0, dayjs_1.default)();
             // Calculate actual vs estimated duration
             const startDate = job.startDate ? (0, dayjs_1.default)(job.startDate) : null;
             const endDate = actualEndDate; // Use the derived actualEndDate
@@ -47,7 +47,7 @@ class JobService {
             const actualDuration = startDate ? endDate.diff(startDate, 'hour') : 0;
             // Calculate material usage efficiency
             // Explicitly typing the reducer parameters
-            const materialCosts = ((_b = job.materials) === null || _b === void 0 ? void 0 : _b.reduce((total, materialUsage) => {
+            const materialCosts = ((_c = job.materials) === null || _c === void 0 ? void 0 : _c.reduce((total, materialUsage) => {
                 // Safely access actual or estimated cost with optional chaining
                 return total + (materialUsage.totalCost || 0);
             }, 0)) || 0;
@@ -61,7 +61,7 @@ class JobService {
                 },
                 materials: {
                     totalCost: materialCosts,
-                    itemsUsed: ((_c = job.materials) === null || _c === void 0 ? void 0 : _c.length) || 0
+                    itemsUsed: ((_d = job.materials) === null || _d === void 0 ? void 0 : _d.length) || 0
                 },
                 performance: {
                     durationVariancePercentage: estimatedDuration
@@ -75,7 +75,7 @@ class JobService {
     // Generate job progress report
     generateJobProgressReport(jobId) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e;
             const job = yield prismaClient_1.default.job.findUnique({
                 where: { id: jobId },
                 include: {
@@ -92,9 +92,9 @@ class JobService {
             if (!job) {
                 throw new Error('Job not found');
             }
-            // Derive actualEndDate from history if available
-            const actualEndDateEntry = (_a = job.history) === null || _a === void 0 ? void 0 : _a.find(h => h.status === client_1.JobStatus.COMPLETED.toString());
-            const actualEndDate = actualEndDateEntry ? actualEndDateEntry.createdAt : null;
+            // ✅ FIXED: Since no COMPLETED status exists, use most recent history entry
+            const mostRecentHistoryEntry = (_b = (_a = job.history) === null || _a === void 0 ? void 0 : _a.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) === null || _b === void 0 ? void 0 : _b[0];
+            const actualEndDate = mostRecentHistoryEntry ? mostRecentHistoryEntry.createdAt : null;
             return {
                 jobDetails: {
                     id: job.id,
@@ -106,15 +106,15 @@ class JobService {
                     actualEndDate: actualEndDate
                 },
                 customer: {
-                    id: ((_b = job.customer) === null || _b === void 0 ? void 0 : _b.id) || '',
-                    name: ((_c = job.customer) === null || _c === void 0 ? void 0 : _c.name) || 'Unknown Customer'
+                    id: ((_c = job.customer) === null || _c === void 0 ? void 0 : _c.id) || '',
+                    name: ((_d = job.customer) === null || _d === void 0 ? void 0 : _d.name) || 'Unknown Customer'
                 },
                 order: job.orders && job.orders.length > 0 ? {
                     id: job.orders[0].id,
                     projectTitle: job.orders[0].projectTitle
                 } : undefined,
                 assignedTeam: [], // You may need to implement this based on your business logic
-                materials: ((_d = job.materials) === null || _d === void 0 ? void 0 : _d.map((materialUsage) => {
+                materials: ((_e = job.materials) === null || _e === void 0 ? void 0 : _e.map((materialUsage) => {
                     var _a, _b, _c, _d, _e, _f, _g;
                     return ({
                         materialId: ((_a = materialUsage.material) === null || _a === void 0 ? void 0 : _a.id) || '',
@@ -138,7 +138,8 @@ class JobService {
                 const atRiskJobs = yield prismaClient_1.default.job.findMany({
                     where: {
                         status: {
-                            in: [client_1.JobStatus.PENDING, client_1.JobStatus.IN_PROGRESS] // Use valid JobStatus enum values
+                            // ✅ FIXED: Use correct JobStatus enum values for active jobs
+                            in: [client_1.JobStatus.ACTIVE, client_1.JobStatus.IN_PROGRESS] // ✅ FIXED: Use valid JobStatus enum values from database
                         },
                         expectedEndDate: {
                             lte: new Date(now.getTime() + daysThreshold * 24 * 60 * 60 * 1000)
@@ -151,17 +152,17 @@ class JobService {
                     }
                 });
                 return atRiskJobs.map(job => {
-                    var _a, _b;
-                    // Derive actualEndDate from history if available
-                    const actualEndDateEntry = (_a = job.history) === null || _a === void 0 ? void 0 : _a.find(h => h.status === client_1.JobStatus.COMPLETED.toString());
-                    const actualEndDate = actualEndDateEntry ? actualEndDateEntry.createdAt : null;
+                    var _a, _b, _c;
+                    // ✅ FIXED: Since no COMPLETED status exists, use most recent history entry
+                    const mostRecentHistoryEntry = (_b = (_a = job.history) === null || _a === void 0 ? void 0 : _a.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())) === null || _b === void 0 ? void 0 : _b[0];
+                    const actualEndDate = mostRecentHistoryEntry ? mostRecentHistoryEntry.createdAt : null;
                     return {
                         id: job.id,
                         title: job.title,
                         status: job.status,
                         expectedEndDate: job.expectedEndDate,
                         actualEndDate: actualEndDate,
-                        customer: ((_b = job.customer) === null || _b === void 0 ? void 0 : _b.name) || 'Unknown Customer',
+                        customer: ((_c = job.customer) === null || _c === void 0 ? void 0 : _c.name) || 'Unknown Customer',
                         assignedUsers: [], // You may need to implement this based on your business logic
                         projectTitle: job.orders && job.orders.length > 0 ? job.orders[0].projectTitle : undefined,
                         totalCosts: 0 // If totalCosts is calculated, it should be done here or in a separate function

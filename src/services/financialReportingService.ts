@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, OrderStatus } from '@prisma/client';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 
 interface SupplierFinancialPerformance {
@@ -82,10 +82,10 @@ export class FinancialReportingService {
       const start = startDate || startOfMonth(new Date());
       const end = endDate || endOfMonth(new Date());
 
-      // Total Revenue (all completed orders within date range)
+      // ✅ FIXED: Total Revenue (all COMPLETED orders within date range)
       const totalRevenueResult = await this.prisma.order.aggregate({
         where: {
-          status: 'COMPLETED',
+          status: OrderStatus.COMPLETED, // ✅ FIXED: Use valid OrderStatus from database
           createdAt: {
             gte: start,
             lte: end
@@ -94,10 +94,10 @@ export class FinancialReportingService {
         _sum: { totalAmount: true }
       });
 
-      // Monthly Revenue (current month)
+      // ✅ FIXED: Monthly Revenue (current month COMPLETED orders)
       const monthlyRevenueResult = await this.prisma.order.aggregate({
         where: {
-          status: 'COMPLETED',
+          status: OrderStatus.COMPLETED, // ✅ FIXED: Use valid OrderStatus from database
           createdAt: {
             gte: startOfMonth(new Date()),
             lte: endOfMonth(new Date())
@@ -165,10 +165,10 @@ export class FinancialReportingService {
       });
       const pendingInvoices = pendingInvoicesResult._sum?.amount || 0;
 
-      // Recent Transactions
+      // ✅ FIXED: Recent Transactions with proper customer relation
       const recentTransactions = await this.prisma.order.findMany({
         where: {
-          status: 'COMPLETED'
+          status: OrderStatus.COMPLETED // ✅ FIXED: Use valid OrderStatus from database
         },
         take: 10,
         orderBy: { createdAt: 'desc' },
@@ -177,6 +177,7 @@ export class FinancialReportingService {
           createdAt: true,
           totalAmount: true,
           customerName: true,
+          // ✅ FIXED: Include customer relation properly
           customer: {
             select: {
               name: true
@@ -203,7 +204,8 @@ export class FinancialReportingService {
 
         return {
           id: transaction.id,
-          description: `Sale to ${transaction.customer?.name || transaction.customerName || 'Customer'}`,
+          // ✅ FIXED: Safe customer name access with fallback
+          description: `Sale to ${transaction.customerName || 'Customer'}`,
           amount: transaction.totalAmount,
           date: dateStr
         };

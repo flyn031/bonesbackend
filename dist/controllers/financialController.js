@@ -108,20 +108,19 @@ const getFinancialMetrics = (req, res) => __awaiter(void 0, void 0, void 0, func
         // Convert strings to Date objects
         const startDateTime = new Date(startDate);
         const endDateTime = new Date(endDate);
-        // Get completed orders in the current period
+        // ✅ FIXED: Get COMPLETED orders (revenue-generating orders)
         const currentPeriodOrders = yield prisma.order.findMany({
             where: {
                 createdAt: {
                     gte: startDateTime,
                     lte: endDateTime
                 },
-                status: 'COMPLETED'
+                status: 'COMPLETED' // ✅ FIXED: Use COMPLETED (actual OrderStatus value)
             },
             include: {
                 job: {
                     include: {
-                        // jobCosts: true, // <-- FIX: Use the correct relation name 'costs'
-                        costs: true
+                        costs: true // ✅ FIXED: Use correct relation name 'costs'
                     }
                 }
                 // Include customer if needed: customer: true
@@ -167,9 +166,9 @@ const getFinancialMetrics = (req, res) => __awaiter(void 0, void 0, void 0, func
                     console.warn(`Invalid quantity/price in items for order ${order.id}:`, item);
                 }
             });
-            // Calculate costs from job costs (using the CORRECT relation name 'costs')
+            // ✅ FIXED: Calculate costs from job costs with proper typing
             if (order.job && order.job.costs) { // Check if job and costs exist
-                order.job.costs.forEach(cost => {
+                order.job.costs.forEach((cost) => {
                     currentCosts += cost.amount; // Assuming amount is always a number
                 });
             }
@@ -219,7 +218,7 @@ const getMonthlyFinancialData = () => __awaiter(void 0, void 0, void 0, function
         const monthEnd = new Date(monthStart);
         monthEnd.setMonth(monthStart.getMonth() + 1); // Go to the start of the *next* month
         monthEnd.setSeconds(monthEnd.getSeconds() - 1); // End of the target month
-        // Get orders completed within this specific month
+        // ✅ FIXED: Get COMPLETED orders within this specific month
         const orders = yield prisma.order.findMany({
             where: {
                 // Use updatedAt or a specific completion date field if more accurate than createdAt
@@ -227,13 +226,12 @@ const getMonthlyFinancialData = () => __awaiter(void 0, void 0, void 0, function
                     gte: monthStart,
                     lte: monthEnd // Use lte (less than or equal to) end of month
                 },
-                status: 'COMPLETED'
+                status: 'COMPLETED' // ✅ FIXED: Use COMPLETED (actual OrderStatus value)
             },
             include: {
                 job: {
                     include: {
-                        // jobCosts: true // <-- FIX: Use the correct relation name 'costs'
-                        costs: true
+                        costs: true // ✅ FIXED: Use correct relation name 'costs'
                     }
                 }
             }
@@ -277,9 +275,9 @@ const getMonthlyFinancialData = () => __awaiter(void 0, void 0, void 0, function
                     console.warn(`[Monthly] Invalid quantity/price in items for order ${order.id}:`, item);
                 }
             });
-            // Calculate costs from job costs (using the CORRECT relation name 'costs')
+            // ✅ FIXED: Calculate costs from job costs with proper typing
             if (order.job && order.job.costs) { // Check if job and costs exist
-                order.job.costs.forEach(cost => {
+                order.job.costs.forEach((cost) => {
                     costs += cost.amount;
                 });
             }

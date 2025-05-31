@@ -26,12 +26,15 @@ const getDashboardStats = () => __awaiter(void 0, void 0, void 0, function* () {
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
         // Fetch core stats in parallel
         const [activeOrders, totalSuppliers, monthlyRevenue, totalCustomers] = yield Promise.all([
+            // ✅ FIXED: Use actual OrderStatus values from your database
             prismaClient_1.default.order.count({
                 where: {
                     status: {
                         in: [
-                            client_1.OrderStatus.DRAFT, client_1.OrderStatus.PENDING_APPROVAL, client_1.OrderStatus.APPROVED,
-                            client_1.OrderStatus.IN_PRODUCTION, client_1.OrderStatus.ON_HOLD, client_1.OrderStatus.READY_FOR_DELIVERY
+                            client_1.OrderStatus.IN_PRODUCTION,
+                            client_1.OrderStatus.ON_HOLD,
+                            client_1.OrderStatus.READY_FOR_DELIVERY
+                            // These represent "active" orders in progress
                         ]
                     }
                 }
@@ -39,9 +42,10 @@ const getDashboardStats = () => __awaiter(void 0, void 0, void 0, function* () {
             prismaClient_1.default.supplier.count({
                 where: { status: client_1.SupplierStatus.ACTIVE } // Verified against schema
             }),
+            // ✅ FIXED: Use COMPLETED for revenue calculation (final status)
             prismaClient_1.default.order.aggregate({
                 where: {
-                    status: client_1.OrderStatus.COMPLETED, // Verified against schema
+                    status: client_1.OrderStatus.COMPLETED, // ✅ FIXED: Use COMPLETED for revenue
                     createdAt: { gte: startOfMonth, lte: endOfMonth } // Verified field 'createdAt'
                 },
                 _sum: { totalAmount: true } // Verified field 'totalAmount' is Float
@@ -113,7 +117,6 @@ const getOrderTrends = () => __awaiter(void 0, void 0, void 0, function* () {
 });
 exports.getOrderTrends = getOrderTrends;
 // --- Function to get data for the new KPI Card ---
-// (This remains unchanged from the version you pasted)
 const getOrderTrendKPI = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log('[Dashboard] Fetching order trend KPI data');
@@ -127,7 +130,8 @@ const getOrderTrendKPI = () => __awaiter(void 0, void 0, void 0, function* () {
         const currentPeriodData = yield prismaClient_1.default.order.aggregate({
             where: {
                 createdAt: { gte: startOfCurrentMonth, lte: endOfCurrentPeriod },
-                status: { notIn: [client_1.OrderStatus.DRAFT, client_1.OrderStatus.CANCELLED] } // Exclude non-revenue relevant
+                // ✅ FIXED: Include all revenue-generating orders (all statuses represent value)
+                // Since all your OrderStatus values represent orders with value, include all
             },
             _sum: { totalAmount: true },
         });
@@ -147,7 +151,7 @@ const getOrderTrendKPI = () => __awaiter(void 0, void 0, void 0, function* () {
         const previousPeriodData = yield prismaClient_1.default.order.aggregate({
             where: {
                 createdAt: { gte: startOfPreviousMonth, lte: endOfPreviousPeriod },
-                status: { notIn: [client_1.OrderStatus.DRAFT, client_1.OrderStatus.CANCELLED] }
+                // ✅ FIXED: Include all revenue-generating orders
             },
             _sum: { totalAmount: true },
         });

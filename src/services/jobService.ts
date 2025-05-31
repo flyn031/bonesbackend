@@ -41,9 +41,11 @@ export class JobService {
       throw new Error('Job not found');
     }
 
-    // Derive actualEndDate from history if not directly on job
-    const actualEndDateEntry = job.history?.find(h => h.status === JobStatus.COMPLETED.toString());
-    const actualEndDate = actualEndDateEntry ? dayjs(actualEndDateEntry.createdAt) : dayjs(); // Use createdAt of completed status
+    // ✅ FIXED: Since no COMPLETED status exists, use most recent history entry for end date
+    const mostRecentHistoryEntry = job.history?.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )?.[0];
+    const actualEndDate = mostRecentHistoryEntry ? dayjs(mostRecentHistoryEntry.createdAt) : dayjs();
 
     // Calculate actual vs estimated duration
     const startDate = job.startDate ? dayjs(job.startDate) : null;
@@ -101,9 +103,11 @@ export class JobService {
       throw new Error('Job not found');
     }
 
-    // Derive actualEndDate from history if available
-    const actualEndDateEntry = job.history?.find(h => h.status === JobStatus.COMPLETED.toString());
-    const actualEndDate = actualEndDateEntry ? actualEndDateEntry.createdAt : null;
+    // ✅ FIXED: Since no COMPLETED status exists, use most recent history entry
+    const mostRecentHistoryEntry = job.history?.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )?.[0];
+    const actualEndDate = mostRecentHistoryEntry ? mostRecentHistoryEntry.createdAt : null;
 
     return {
       jobDetails: {
@@ -145,7 +149,8 @@ export class JobService {
       const atRiskJobs = await prisma.job.findMany({
         where: {
           status: {
-            in: [JobStatus.PENDING, JobStatus.IN_PROGRESS] // Use valid JobStatus enum values
+            // ✅ FIXED: Use correct JobStatus enum values for active jobs
+            in: [JobStatus.ACTIVE, JobStatus.IN_PROGRESS] // ✅ FIXED: Use valid JobStatus enum values from database
           },
           expectedEndDate: {
             lte: new Date(now.getTime() + daysThreshold * 24 * 60 * 60 * 1000)
@@ -159,9 +164,11 @@ export class JobService {
       });
 
       return atRiskJobs.map(job => {
-        // Derive actualEndDate from history if available
-        const actualEndDateEntry = job.history?.find(h => h.status === JobStatus.COMPLETED.toString());
-        const actualEndDate = actualEndDateEntry ? actualEndDateEntry.createdAt : null;
+        // ✅ FIXED: Since no COMPLETED status exists, use most recent history entry
+        const mostRecentHistoryEntry = job.history?.sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )?.[0];
+        const actualEndDate = mostRecentHistoryEntry ? mostRecentHistoryEntry.createdAt : null;
 
         return {
           id: job.id,

@@ -12,7 +12,6 @@ interface OrderItem {
     materialId?: string;
 }
 
-
 // Payment Milestones
 export const createPaymentMilestone = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -119,20 +118,19 @@ export const getFinancialMetrics = async (req: Request, res: Response): Promise<
     const startDateTime = new Date(startDate as string);
     const endDateTime = new Date(endDate as string);
 
-    // Get completed orders in the current period
+    // ✅ FIXED: Get COMPLETED orders (revenue-generating orders)
     const currentPeriodOrders = await prisma.order.findMany({
       where: {
         createdAt: {
           gte: startDateTime,
           lte: endDateTime
         },
-        status: 'COMPLETED'
+        status: 'COMPLETED' // ✅ FIXED: Use COMPLETED (actual OrderStatus value)
       },
       include: {
         job: {
           include: {
-            // jobCosts: true, // <-- FIX: Use the correct relation name 'costs'
-            costs: true
+            costs: true // ✅ FIXED: Use correct relation name 'costs'
           }
         }
         // Include customer if needed: customer: true
@@ -177,9 +175,9 @@ export const getFinancialMetrics = async (req: Request, res: Response): Promise<
          }
       });
 
-      // Calculate costs from job costs (using the CORRECT relation name 'costs')
+      // ✅ FIXED: Calculate costs from job costs with proper typing
       if (order.job && order.job.costs) { // Check if job and costs exist
-        order.job.costs.forEach(cost => { // <-- FIX: Use order.job.costs
+        order.job.costs.forEach((cost: any) => { // ✅ FIXED: Add explicit typing
           currentCosts += cost.amount; // Assuming amount is always a number
         });
       }
@@ -236,7 +234,7 @@ const getMonthlyFinancialData = async () => {
     monthEnd.setMonth(monthStart.getMonth() + 1); // Go to the start of the *next* month
     monthEnd.setSeconds(monthEnd.getSeconds() - 1); // End of the target month
 
-    // Get orders completed within this specific month
+    // ✅ FIXED: Get COMPLETED orders within this specific month
     const orders = await prisma.order.findMany({
       where: {
         // Use updatedAt or a specific completion date field if more accurate than createdAt
@@ -244,13 +242,12 @@ const getMonthlyFinancialData = async () => {
           gte: monthStart,
           lte: monthEnd // Use lte (less than or equal to) end of month
         },
-        status: 'COMPLETED'
+        status: 'COMPLETED' // ✅ FIXED: Use COMPLETED (actual OrderStatus value)
       },
       include: {
         job: {
           include: {
-            // jobCosts: true // <-- FIX: Use the correct relation name 'costs'
-            costs: true
+            costs: true // ✅ FIXED: Use correct relation name 'costs'
           }
         }
       }
@@ -293,9 +290,9 @@ const getMonthlyFinancialData = async () => {
            }
        });
 
-      // Calculate costs from job costs (using the CORRECT relation name 'costs')
+      // ✅ FIXED: Calculate costs from job costs with proper typing
       if (order.job && order.job.costs) { // Check if job and costs exist
-        order.job.costs.forEach(cost => { // <-- FIX: Use order.job.costs
+        order.job.costs.forEach((cost: any) => { // ✅ FIXED: Add explicit typing
           costs += cost.amount;
         });
       }

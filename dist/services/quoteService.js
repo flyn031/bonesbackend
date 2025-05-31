@@ -344,7 +344,7 @@ const convertQuoteToOrder = (quoteId, userId) => __awaiter(void 0, void 0, void 
         projectTitle: quoteVersion.title || `Order from Quote ${quoteVersion.quoteNumber || quoteId}`,
         quoteRef: quoteVersion.quoteNumber || quoteVersion.quoteReference || quoteId,
         orderType: client_1.OrderType.CUSTOMER_LINKED,
-        status: client_1.OrderStatus.PENDING_APPROVAL,
+        status: client_1.OrderStatus.IN_PRODUCTION, // ✅ FIXED: Use valid OrderStatus from database
         customerName: quoteVersion.customer.name,
         contactPerson: quoteVersion.contactPerson || quoteVersion.customer.contactPerson || quoteVersion.customer.name,
         contactPhone: quoteVersion.contactPhone || quoteVersion.customer.phone || '',

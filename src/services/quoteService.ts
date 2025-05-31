@@ -368,7 +368,7 @@ export const convertQuoteToOrder = async (quoteId: string, userId: string) => {
         projectTitle: quoteVersion.title || `Order from Quote ${quoteVersion.quoteNumber || quoteId}`,
         quoteRef: quoteVersion.quoteNumber || quoteVersion.quoteReference || quoteId,
         orderType: OrderType.CUSTOMER_LINKED,
-        status: OrderStatus.PENDING_APPROVAL,
+        status: OrderStatus.IN_PRODUCTION, // ✅ FIXED: Use valid OrderStatus from database
         customerName: quoteVersion.customer.name,
         contactPerson: quoteVersion.contactPerson || (quoteVersion.customer as any).contactPerson || quoteVersion.customer.name,
         contactPhone: quoteVersion.contactPhone || quoteVersion.customer.phone || '',

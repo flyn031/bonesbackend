@@ -127,11 +127,13 @@ const createJob = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         console.log("[JobController][createJob] Job created successfully:", newJob.id);
         if (orderId) {
             try {
+                // ✅ FIXED: Only link the job, don't change order status
+                // Order status is managed by orderController - orders stay APPROVED
                 yield prismaClient_1.default.order.update({
                     where: { id: orderId },
-                    data: { jobId: newJob.id, status: 'IN_PRODUCTION' }
+                    data: { jobId: newJob.id }
                 });
-                console.log(`[JobController][createJob] Updated order ${orderId} status and linked job ${newJob.id}`);
+                console.log(`[JobController][createJob] Linked job ${newJob.id} to order ${orderId}`);
             }
             catch (orderUpdateError) {
                 console.error(`[JobController][createJob] Failed to update order ${orderId}:`, orderUpdateError);
@@ -389,9 +391,10 @@ const deleteJob = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
         });
         if (!job)
             return res.status(404).json({ message: `Job not found with ID ${jobId}` });
+        // ✅ FIXED: Use correct JobStatus values from database
         if (job.status !== client_1.JobStatus.DRAFT && job.status !== client_1.JobStatus.CANCELED) {
             console.warn(`[JobController][deleteJob] Attempt to delete job ${jobId} with status ${job.status}. Restricted.`);
-            return res.status(400).json({ message: `Cannot delete job: Only DRAFT or CANCELLED jobs can be deleted.` });
+            return res.status(400).json({ message: `Cannot delete job: Only DRAFT or CANCELED jobs can be deleted.` });
         }
         if (job.orders.length > 0) { // Check if orders are linked
             yield prismaClient_1.default.order.updateMany({

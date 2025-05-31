@@ -3,7 +3,7 @@ import { Response, NextFunction } from 'express'; // Import Response and NextFun
 import prisma from '../utils/prismaClient';
 import csv from 'csv-parser';
 import fs from 'fs';
-import { Prisma, ContactRole, PaymentTerms /* Add other enums like CustomerStatus if needed */ } from '@prisma/client';
+import { Prisma, ContactRole, PaymentTerms, JobStatus /* Add other enums like CustomerStatus if needed */ } from '@prisma/client';
 import { AuthRequest } from '../types/express.d'; // <--- ADDED: Import AuthRequest
 
 // Helper function to check if a string is a valid ContactRole
@@ -380,8 +380,19 @@ export const getCustomers = async (req: AuthRequest, res: Response, next: NextFu
         const customers = await prisma.customer.findMany({
             where: filter,
             include: {
-                // Simplified includes to avoid totalCosts reference
+                // ✅ CONFIRMED: Filter jobs with valid JobStatus values from database
                 jobs: {
+                    where: {
+                        status: {
+                            in: [
+                                JobStatus.ACTIVE,
+                                JobStatus.DRAFT,
+                                JobStatus.PENDING,
+                                JobStatus.IN_PROGRESS,
+                                JobStatus.CANCELED
+                            ]
+                        }
+                    },
                     select: {
                         id: true,
                         title: true,
@@ -436,8 +447,19 @@ export const getCustomer = async (req: AuthRequest, res: Response, next: NextFun
         const customer = await prisma.customer.findUnique({
             where: { id },
             include: {
-                // Simplified includes to avoid totalCosts reference
+                // ✅ CONFIRMED: Filter jobs with valid JobStatus values from database
                 jobs: {
+                    where: {
+                        status: {
+                            in: [
+                                JobStatus.ACTIVE,
+                                JobStatus.DRAFT,
+                                JobStatus.PENDING,
+                                JobStatus.IN_PROGRESS,
+                                JobStatus.CANCELED
+                            ]
+                        }
+                    },
                     select: {
                         id: true,
                         title: true,
