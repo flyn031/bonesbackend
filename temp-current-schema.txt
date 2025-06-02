@@ -1,0 +1,15 @@
+enum JobStatus {
+  ACTIVE
+  DRAFT
+  PENDING
+  IN_PROGRESS
+  CANCELED
+}
+
+enum OrderStatus {
+  IN_PRODUCTION
+  ON_HOLD
+  READY_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+}

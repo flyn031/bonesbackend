@@ -28,6 +28,13 @@ interface PerformanceMetrics {
  }>;
 }
 
+// Define interface for performance history entries
+interface PerformanceHistoryEntry {
+  date: Date;
+  deliveryTime: number;
+  orderCompleted: boolean;
+}
+
 export class SupplierPerformanceService {
  private prisma: PrismaClient;
 
@@ -72,10 +79,16 @@ export class SupplierPerformanceService {
    supplier.averageDeliveryTime = calculatedAvgDeliveryTime;
    supplier.performanceHistory = '[]'; // Default empty history as JSON string
    
-   // Parse performanceHistory or use empty array if not available
-   const performanceHistory = supplier.performanceHistory 
-     ? JSON.parse(supplier.performanceHistory) 
-     : [];
+   // Parse performanceHistory or use empty array if not available with proper typing
+   let performanceHistory: PerformanceHistoryEntry[] = [];
+   try {
+     performanceHistory = supplier.performanceHistory 
+       ? JSON.parse(supplier.performanceHistory) 
+       : [];
+   } catch (error) {
+     console.warn(`Failed to parse performance history for supplier ${supplierId}:`, error);
+     performanceHistory = [];
+   }
 
    // Calculate completion rate safely
    const completionRate = (supplier.totalOrders || 0) > 0 
@@ -106,7 +119,7 @@ export class SupplierPerformanceService {
    };
  }
 
- private determinePerformanceTrend(history: any[]): 'IMPROVING' | 'DECLINING' | 'STABLE' {
+ private determinePerformanceTrend(history: PerformanceHistoryEntry[]): 'IMPROVING' | 'DECLINING' | 'STABLE' {
    if (history.length < 2) return 'STABLE';
 
    const completedOrderRates = history.map(entry => 
@@ -133,11 +146,11 @@ export class SupplierPerformanceService {
    }
  }
 
- async getSupplierPerformanceReport(supplierId: string) {
+ async getSupplierPerformanceReport(supplierId: string): Promise<PerformanceMetrics> {
    return this.calculatePerformanceScore(supplierId);
  }
 
- async getAllSuppliersPerformance() {
+ async getAllSuppliersPerformance(): Promise<PerformanceMetrics[]> {
    console.log('Starting getAllSuppliersPerformance');
    
    try {
@@ -150,7 +163,8 @@ export class SupplierPerformanceService {
        return [];
      }
      
-     const performanceReports = [];
+     // ✅ FIXED: Properly type the performanceReports array to prevent "never" type inference
+     const performanceReports: PerformanceMetrics[] = [];
      for (const supplier of suppliers) {
        try {
          const report = await this.calculatePerformanceScore(supplier.id);

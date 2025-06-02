@@ -4,8 +4,46 @@ import { PrismaClient, OrderStatus, SupplierStatus } from '@prisma/client';
 // Assuming prismaClient.ts exports a singleton instance
 import prisma from '../utils/prismaClient'; // Make sure this path is correct
 
+// Define interfaces for better type safety
+interface OrderTrend {
+  month: string;
+  value: number;
+  totalAmount: number;
+}
+
+interface DashboardStats {
+  activeOrders: number;
+  totalSuppliers: number;
+  lowStock: number;
+  monthlyRevenue: number;
+  totalCustomers: number;
+}
+
+interface OrderTrendKPI {
+  currentPeriodValue: number;
+  previousPeriodValue: number;
+  percentageChange: number | null;
+}
+
+interface RecentActivityData {
+  recentOrders: Array<{
+    id: string;
+    projectTitle: string;
+    status: string;
+    updatedAt: Date;
+    createdAt: Date;
+    customerName: string;
+  }>;
+  recentCustomers: Array<{
+    id: string;
+    name: string;
+    email: string | null; // Fix: Prisma schema has email as nullable
+    createdAt: Date;
+  }>;
+}
+
 // --- Function to get main dashboard stats ---
-export const getDashboardStats = async () => {
+export const getDashboardStats = async (): Promise<DashboardStats> => {
   try {
     console.log('[Dashboard] Fetching dashboard stats');
     const now = new Date();
@@ -58,7 +96,7 @@ export const getDashboardStats = async () => {
     ).length;
     // --- End Corrected Low Stock Calculation ---
 
-    const stats = {
+    const stats: DashboardStats = {
       activeOrders,
       totalSuppliers,
       lowStock: lowStockCount, // Use the correctly calculated count
@@ -76,11 +114,11 @@ export const getDashboardStats = async () => {
 };
 
 // --- Function to get data for the monthly trends chart ---
-// (This remains unchanged from the version you pasted)
-export const getOrderTrends = async () => {
+export const getOrderTrends = async (): Promise<OrderTrend[]> => {
     try {
         console.log('[Dashboard] Fetching order trends for chart');
-        const trends = [];
+        // ✅ FIXED: Properly type the trends array to prevent "never" type inference
+        const trends: OrderTrend[] = [];
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
         for (let i = 5; i >= 0; i--) {
@@ -114,7 +152,7 @@ export const getOrderTrends = async () => {
 };
 
 // --- Function to get data for the new KPI Card ---
-export const getOrderTrendKPI = async () => {
+export const getOrderTrendKPI = async (): Promise<OrderTrendKPI> => {
   try {
     console.log('[Dashboard] Fetching order trend KPI data');
     const now = new Date();
@@ -167,7 +205,7 @@ export const getOrderTrendKPI = async () => {
       percentageChange = 100.0; // Indicate infinite growth from zero
     } // else remains null if both are 0
 
-    const result = { currentPeriodValue, previousPeriodValue, percentageChange };
+    const result: OrderTrendKPI = { currentPeriodValue, previousPeriodValue, percentageChange };
     console.log('[Dashboard] KPI data fetched successfully:', result);
     return result;
 
@@ -178,8 +216,7 @@ export const getOrderTrendKPI = async () => {
 };
 
 // --- Function to get raw data for Recent Activity feed ---
-// (This remains unchanged from the version you pasted)
-export const getRecentActivity = async () => {
+export const getRecentActivity = async (): Promise<RecentActivityData> => {
   try {
     console.log('[Dashboard] Fetching recent activity data');
     // Fetch recent orders

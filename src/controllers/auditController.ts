@@ -7,6 +7,21 @@ import path from 'path';
 import fs from 'fs';
 import { AuthRequest } from '../types/express'; // Import the shared type
 
+// Define types for the audit history entities
+interface HistoryEntityGroup {
+  entity: 'QUOTE' | 'ORDER' | 'JOB';
+  entityId: string;
+  history: any[]; // Using any[] since we don't have the exact Prisma types imported
+}
+
+interface AuditStatistics {
+  totalChanges: number;
+  changesByType: Record<string, number>;
+  changesByUser: Array<{ name: string; count: number }>;
+  recentActivity: any[];
+  trendData: Array<{ date: string; changes: number }>;
+}
+
 export const getQuoteHistory = async (req: AuthRequest, res: Response) => {
   try {
     const quoteId = req.params.id;
@@ -78,8 +93,8 @@ export const getCompleteHistory = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'At least one ID must be provided' });
     }
 
-    // For now, manually compile the history
-    const history = [];
+    // For now, manually compile the history with proper typing
+    const history: HistoryEntityGroup[] = [];
 
     if (quoteId) {
       const quoteHistory = await prisma.quoteHistory.findMany({
@@ -504,13 +519,13 @@ export const getAuditStatistics = async (req: AuthRequest, res: Response) => {
       }
     } : {};
 
-    // Initialize statistics object
-    const statistics: any = { // Use any for easier property assignment
+    // Initialize statistics object with proper typing
+    const statistics: AuditStatistics = {
       totalChanges: 0,
       changesByType: {},
-      changesByUser: {},
+      changesByUser: [],
       recentActivity: [],
-      trendData: [] // Mock trend data
+      trendData: []
     };
 
     try {
@@ -525,7 +540,7 @@ export const getAuditStatistics = async (req: AuthRequest, res: Response) => {
         });
 
         statistics.totalChanges += count;
-        changeTypes.forEach((item: any) => { // Use any for item
+        changeTypes.forEach((item: any) => {
           statistics.changesByType[`${typePrefix}_${item.changeType}`] = item._count;
         });
 
@@ -540,7 +555,7 @@ export const getAuditStatistics = async (req: AuthRequest, res: Response) => {
           take: 5 // Limit per type before final sorting
         });
 
-        statistics.recentActivity.push(...recentActivity.map((item: any) => ({ // Use any for item
+        statistics.recentActivity.push(...recentActivity.map((item: any) => ({
           ...item,
           entityType: typePrefix
         })));
@@ -574,7 +589,6 @@ export const getAuditStatistics = async (req: AuthRequest, res: Response) => {
       });
       statistics.changesByUser = Object.values(changesByUserMap);
 
-
       // Sort recent activity by date
       statistics.recentActivity.sort((a: any, b: any) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -586,18 +600,18 @@ export const getAuditStatistics = async (req: AuthRequest, res: Response) => {
       // Create trend data (mock data for now)
       // In a real app, you'd query grouped by date
       const today = new Date();
-      statistics.trendData = []; // Reset mock data array
+      const trendData: Array<{ date: string; changes: number }> = [];
       for (let i = 6; i >= 0; i--) {
         const date = new Date();
         date.setDate(today.getDate() - i);
         // Basic mock data: random number of changes per day
         const changesOnDay = Math.floor(Math.random() * (statistics.totalChanges / 7 || 1)); // Scale random by average changes per day
-        statistics.trendData.push({
+        trendData.push({
           date: date.toISOString().split('T')[0],
           changes: changesOnDay
         });
       }
-
+      statistics.trendData = trendData;
 
       res.json(statistics);
     } catch (err) {
@@ -609,7 +623,6 @@ export const getAuditStatistics = async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Failed to get audit statistics' });
   }
 };
-
 
 // Digital signature verification
 export const verifyDigitalSignature = async (req: AuthRequest, res: Response) => {

@@ -82,10 +82,10 @@ const getDashboardStats = () => __awaiter(void 0, void 0, void 0, function* () {
 });
 exports.getDashboardStats = getDashboardStats;
 // --- Function to get data for the monthly trends chart ---
-// (This remains unchanged from the version you pasted)
 const getOrderTrends = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log('[Dashboard] Fetching order trends for chart');
+        // ✅ FIXED: Properly type the trends array to prevent "never" type inference
         const trends = [];
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         for (let i = 5; i >= 0; i--) {
@@ -175,7 +175,6 @@ const getOrderTrendKPI = () => __awaiter(void 0, void 0, void 0, function* () {
 });
 exports.getOrderTrendKPI = getOrderTrendKPI;
 // --- Function to get raw data for Recent Activity feed ---
-// (This remains unchanged from the version you pasted)
 const getRecentActivity = () => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log('[Dashboard] Fetching recent activity data');

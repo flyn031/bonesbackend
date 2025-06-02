@@ -12,6 +12,22 @@ interface OrderItem {
     materialId?: string;
 }
 
+// Add type definition for monthly financial data
+interface MonthlyFinancialData {
+    month: string;
+    year: number;
+    revenue: number;
+    costs: number;
+    profit: number;
+}
+
+// Add type definition for job costs (matching Prisma schema)
+interface JobCost {
+    amount: number;
+    description?: string;
+    category?: string | null; // Fix: Prisma returns null, not undefined
+}
+
 // Payment Milestones
 export const createPaymentMilestone = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -177,7 +193,7 @@ export const getFinancialMetrics = async (req: Request, res: Response): Promise<
 
       // ✅ FIXED: Calculate costs from job costs with proper typing
       if (order.job && order.job.costs) { // Check if job and costs exist
-        order.job.costs.forEach((cost: any) => { // ✅ FIXED: Add explicit typing
+        order.job.costs.forEach((cost: JobCost) => { // ✅ FIXED: Use proper JobCost type instead of any
           currentCosts += cost.amount; // Assuming amount is always a number
         });
       }
@@ -216,14 +232,15 @@ export const getFinancialMetrics = async (req: Request, res: Response): Promise<
 };
 
 // Helper function to get monthly financial data
-const getMonthlyFinancialData = async () => {
+const getMonthlyFinancialData = async (): Promise<MonthlyFinancialData[]> => {
   // Get the last 12 months of data
   const startDate = new Date();
   startDate.setMonth(startDate.getMonth() - 11); // Go back 11 months (total 12 including current)
   startDate.setDate(1); // Start from the 1st of that month
   startDate.setHours(0, 0, 0, 0); // Set to start of the day
 
-  const monthlyData = [];
+  // ✅ FIXED: Properly type the monthlyData array to prevent "never" type inference
+  const monthlyData: MonthlyFinancialData[] = [];
 
   // For each of the last 12 months
   for (let i = 0; i < 12; i++) {
@@ -292,7 +309,7 @@ const getMonthlyFinancialData = async () => {
 
       // ✅ FIXED: Calculate costs from job costs with proper typing
       if (order.job && order.job.costs) { // Check if job and costs exist
-        order.job.costs.forEach((cost: any) => { // ✅ FIXED: Add explicit typing
+        order.job.costs.forEach((cost: JobCost) => { // ✅ FIXED: Use proper JobCost type instead of any
           costs += cost.amount;
         });
       }

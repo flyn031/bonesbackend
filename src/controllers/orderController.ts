@@ -1,9 +1,28 @@
 // backend/src/controllers/orderController.ts
 import { Request, Response, NextFunction } from 'express';
-import { PrismaClient, OrderStatus, JobStatus } from '@prisma/client';
+import { PrismaClient, OrderStatus, JobStatus, Job } from '@prisma/client';
 import * as quoteService from '../services/quoteService';
 
 const prisma = new PrismaClient();
+
+// Define types for better type safety
+interface OrderUpdateData {
+    status?: OrderStatus;
+    updatedAt?: Date;
+    jobId?: string;
+}
+
+interface AllowedOrderFields {
+    projectTitle?: string;
+    status?: OrderStatus;
+    notes?: string;
+    customerName?: string;
+    contactPerson?: string;
+    contactEmail?: string;
+    contactPhone?: string;
+    projectValue?: number;
+    leadTimeWeeks?: number;
+}
 
 // --- Existing createOrder (for direct order creation, if any) ---
 export const createOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -15,7 +34,7 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
             discounts, paymentSchedule, budgetAllocations
         } = req.body;
 
-        const missingFields = [];
+        const missingFields: string[] = [];
         if (!projectTitle) missingFields.push('Project Title');
         if (!customerName) missingFields.push('Customer');
         if (!contactPerson) missingFields.push('Contact Person');
@@ -158,8 +177,15 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
             return; 
         }
 
-        // ✅ FIXED: Use actual OrderStatus enum values from database
-        const validOrderStatuses = [OrderStatus.IN_PRODUCTION, OrderStatus.ON_HOLD, OrderStatus.READY_FOR_DELIVERY, OrderStatus.DELIVERED, OrderStatus.COMPLETED];
+        // ✅ FIXED: Use actual OrderStatus enum values from database with proper typing
+        const validOrderStatuses: OrderStatus[] = [
+            OrderStatus.IN_PRODUCTION, 
+            OrderStatus.ON_HOLD, 
+            OrderStatus.READY_FOR_DELIVERY, 
+            OrderStatus.DELIVERED, 
+            OrderStatus.COMPLETED
+        ];
+        
         if (!validOrderStatuses.includes(status)) {
             res.status(400).json({ 
                 error: 'Invalid order status', 
@@ -183,7 +209,7 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
         }
 
         // AUTO-CREATE JOB WHEN ORDER STATUS CHANGES TO READY_FOR_DELIVERY (orders ready for work)
-        let jobCreated = null;
+        let jobCreated: Job | null = null;
         if (status === OrderStatus.READY_FOR_DELIVERY && !existingOrder.jobId) {
             console.log(`[OrdersController] Auto-creating job for READY_FOR_DELIVERY order ${id}`);
             
@@ -216,7 +242,7 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
         }
 
         // Update the order status (and link job if created)
-        const updateData: any = { 
+        const updateData: OrderUpdateData = { 
             status: status as OrderStatus,
             updatedAt: new Date()
         };
@@ -263,7 +289,7 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
         const { id } = req.params;
         const updateData = req.body;
         
-        const allowedFields: any = {};
+        const allowedFields: AllowedOrderFields = {};
         if (updateData.projectTitle) allowedFields.projectTitle = updateData.projectTitle;
         if (updateData.status) allowedFields.status = updateData.status as OrderStatus;
         if (updateData.notes) allowedFields.notes = updateData.notes;

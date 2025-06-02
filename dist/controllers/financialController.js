@@ -210,6 +210,7 @@ const getMonthlyFinancialData = () => __awaiter(void 0, void 0, void 0, function
     startDate.setMonth(startDate.getMonth() - 11); // Go back 11 months (total 12 including current)
     startDate.setDate(1); // Start from the 1st of that month
     startDate.setHours(0, 0, 0, 0); // Set to start of the day
+    // ✅ FIXED: Properly type the monthlyData array to prevent "never" type inference
     const monthlyData = [];
     // For each of the last 12 months
     for (let i = 0; i < 12; i++) {

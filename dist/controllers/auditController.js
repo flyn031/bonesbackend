@@ -84,7 +84,7 @@ const getCompleteHistory = (req, res) => __awaiter(void 0, void 0, void 0, funct
         if (!quoteId && !orderId && !jobId) {
             return res.status(400).json({ error: 'At least one ID must be provided' });
         }
-        // For now, manually compile the history
+        // For now, manually compile the history with proper typing
         const history = [];
         if (quoteId) {
             const quoteHistory = yield prismaClient_1.default.quoteHistory.findMany({
@@ -468,13 +468,13 @@ const getAuditStatistics = (req, res) => __awaiter(void 0, void 0, void 0, funct
         const dateFilter = dateFrom || dateTo ? {
             createdAt: Object.assign(Object.assign({}, (dateFrom && { gte: new Date(dateFrom) })), (dateTo && { lte: new Date(dateTo) }))
         } : {};
-        // Initialize statistics object
+        // Initialize statistics object with proper typing
         const statistics = {
             totalChanges: 0,
             changesByType: {},
-            changesByUser: {},
+            changesByUser: [],
             recentActivity: [],
-            trendData: [] // Mock trend data
+            trendData: []
         };
         try {
             // Helper to fetch and process stats for a given history type
@@ -533,17 +533,18 @@ const getAuditStatistics = (req, res) => __awaiter(void 0, void 0, void 0, funct
             // Create trend data (mock data for now)
             // In a real app, you'd query grouped by date
             const today = new Date();
-            statistics.trendData = []; // Reset mock data array
+            const trendData = [];
             for (let i = 6; i >= 0; i--) {
                 const date = new Date();
                 date.setDate(today.getDate() - i);
                 // Basic mock data: random number of changes per day
                 const changesOnDay = Math.floor(Math.random() * (statistics.totalChanges / 7 || 1)); // Scale random by average changes per day
-                statistics.trendData.push({
+                trendData.push({
                     date: date.toISOString().split('T')[0],
                     changes: changesOnDay
                 });
             }
+            statistics.trendData = trendData;
             res.json(statistics);
         }
         catch (err) {

@@ -46,10 +46,17 @@ class SupplierPerformanceService {
             supplier.completedOrders = calculatedCompletedOrders;
             supplier.averageDeliveryTime = calculatedAvgDeliveryTime;
             supplier.performanceHistory = '[]'; // Default empty history as JSON string
-            // Parse performanceHistory or use empty array if not available
-            const performanceHistory = supplier.performanceHistory
-                ? JSON.parse(supplier.performanceHistory)
-                : [];
+            // Parse performanceHistory or use empty array if not available with proper typing
+            let performanceHistory = [];
+            try {
+                performanceHistory = supplier.performanceHistory
+                    ? JSON.parse(supplier.performanceHistory)
+                    : [];
+            }
+            catch (error) {
+                console.warn(`Failed to parse performance history for supplier ${supplierId}:`, error);
+                performanceHistory = [];
+            }
             // Calculate completion rate safely
             const completionRate = (supplier.totalOrders || 0) > 0
                 ? ((supplier.completedOrders || 0) / (supplier.totalOrders || 1)) * 100
@@ -114,6 +121,7 @@ class SupplierPerformanceService {
                 if (suppliers.length === 0) {
                     return [];
                 }
+                // ✅ FIXED: Properly type the performanceReports array to prevent "never" type inference
                 const performanceReports = [];
                 for (const supplier of suppliers) {
                     try {

@@ -195,8 +195,14 @@ const updateOrderStatus = (req, res, next) => __awaiter(void 0, void 0, void 0, 
             res.status(400).json({ error: 'Order ID and status are required' });
             return;
         }
-        // ✅ FIXED: Use actual OrderStatus enum values from database
-        const validOrderStatuses = [client_1.OrderStatus.IN_PRODUCTION, client_1.OrderStatus.ON_HOLD, client_1.OrderStatus.READY_FOR_DELIVERY, client_1.OrderStatus.DELIVERED, client_1.OrderStatus.COMPLETED];
+        // ✅ FIXED: Use actual OrderStatus enum values from database with proper typing
+        const validOrderStatuses = [
+            client_1.OrderStatus.IN_PRODUCTION,
+            client_1.OrderStatus.ON_HOLD,
+            client_1.OrderStatus.READY_FOR_DELIVERY,
+            client_1.OrderStatus.DELIVERED,
+            client_1.OrderStatus.COMPLETED
+        ];
         if (!validOrderStatuses.includes(status)) {
             res.status(400).json({
                 error: 'Invalid order status',
