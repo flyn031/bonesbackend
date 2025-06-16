@@ -34,51 +34,33 @@ const prisma = new PrismaClient();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- DEBUGGING: Explicit OPTIONS handler ---
-app.options('*', (req, res) => {
-  console.log(`>>> Explicit OPTIONS handler hit for path: ${req.path}`);
-  console.log(`>>> Origin header received: "${req.headers.origin}"`);
-  console.log(`>>> Origin type: ${typeof req.headers.origin}`);
-  
-  // Define allowed origins for both development and production
-  const allowedOrigins = [
-    'http://localhost:5173',                    // Development
-    'https://bones-frontend-eb51.vercel.app',   // Production
-    'https://bones-frontend-d6qm.vercel.app',   // Production
-    'https://bones-frontend-9u58.vercel.app'    // Production
-  ];
-  
-  const origin = req.headers.origin;
-  console.log(`>>> Checking if "${origin}" is in allowedOrigins`);
-  console.log(`>>> Match found: ${origin && allowedOrigins.includes(origin)}`);
-  
-  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-  console.log(`>>> Using allowedOrigin: "${allowedOrigin}"`);
-  
-  res.header('Access-Control-Allow-Origin', allowedOrigin);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  console.log(`>>> Responding to OPTIONS request with origin: ${allowedOrigin} and status 204`);
-  res.status(204).send();
+// 2. Add debugging middleware to log origins
+app.use((req, res, next) => {
+  console.log('🔍 Origin:', req.headers.origin);
+  next();
 });
-// --- END DEBUGGING ---
 
-// 2. CORS - Updated to support both development and production
+// 3. CORS with callback function for better control
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://bones-frontend-9u58.vercel.app',
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',                    // Development - Your local frontend
-    'https://bones-frontend-eb51.vercel.app',   // Production - Your first deployed frontend
-    'https://bones-frontend-d6qm.vercel.app',   // Production - Your second deployment
-    'https://bones-frontend-9u58.vercel.app',   // Production - Your newest deployment
-    'https://*.vercel.app'                      // Any future Vercel deployments
-  ],
+  origin: (origin, callback) => {
+    console.log(`🔍 CORS Check: Origin "${origin}" - Allowed: ${!origin || allowedOrigins.includes(origin)}`);
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Not allowed by CORS: ${origin}`));
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
 }));
 
-// 3. Enhanced logging middleware
+// 4. Enhanced logging middleware
 app.use((req, res, next) => {
   if (req.method !== 'OPTIONS') {
     const authHeader = req.headers.authorization;
@@ -112,7 +94,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// 4. Routes - DEBUGGING EACH REGISTRATION
+// 5. Routes - DEBUGGING EACH REGISTRATION
 console.log('🔧 [SERVER] Registering auth routes...');
 app.use('/api/auth', authRoutes);
 
@@ -204,12 +186,9 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`CORS enabled for:`);
   console.log(`  - Development: http://localhost:5173`);
-  console.log(`  - Production: https://bones-frontend-eb51.vercel.app`);
-  console.log(`  - Production: https://bones-frontend-d6qm.vercel.app`);
   console.log(`  - Production: https://bones-frontend-9u58.vercel.app`);
   console.log('🔧 [SERVER] All routes registered. Server ready.');
 });
 
 // Export the app for testing
-export { app, prisma };// Updated CORS configuration Mon Jun 16 14:14:28 BST 2025
-// Force Railway redeploy Mon Jun 16 20:50:02 BST 2025// Force rebuild Mon Jun 16 21:17:04 BST 2025
+export { app, prisma };
