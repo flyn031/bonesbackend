@@ -37,17 +37,36 @@ app.use(express.urlencoded({ extended: true }));
 // --- DEBUGGING: Explicit OPTIONS handler ---
 app.options('*', (req, res) => {
   console.log(`>>> Explicit OPTIONS handler hit for path: ${req.path}`);
-  res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+  
+  // Define allowed origins for both development and production
+  const allowedOrigins = [
+    'http://localhost:5173',                    // Development
+    'https://bones-frontend-eb51.vercel.app',   // Production
+    'https://bones-frontend-d6qm.vercel.app',   // Production
+    'https://bones-frontend-9u58.vercel.app'    // Production
+  ];
+  
+  const origin = req.headers.origin;
+  const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  
+  res.header('Access-Control-Allow-Origin', allowedOrigin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
-  console.log('>>> Responding to OPTIONS request with status 204');
+  console.log(`>>> Responding to OPTIONS request with origin: ${allowedOrigin} and status 204`);
   res.status(204).send();
 });
+// --- END DEBUGGING ---
 
-// 2. CORS
+// 2. CORS - Updated to support both development and production
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: [
+    'http://localhost:5173',                    // Development - Your local frontend
+    'https://bones-frontend-eb51.vercel.app',   // Production - Your first deployed frontend
+    'https://bones-frontend-d6qm.vercel.app',   // Production - Your second deployment
+    'https://bones-frontend-9u58.vercel.app',   // Production - Your newest deployment
+    'https://*.vercel.app'                      // Any future Vercel deployments
+  ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -177,6 +196,11 @@ const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`CORS enabled for:`);
+  console.log(`  - Development: http://localhost:5173`);
+  console.log(`  - Production: https://bones-frontend-eb51.vercel.app`);
+  console.log(`  - Production: https://bones-frontend-d6qm.vercel.app`);
+  console.log(`  - Production: https://bones-frontend-9u58.vercel.app`);
   console.log('🔧 [SERVER] All routes registered. Server ready.');
 });
 
