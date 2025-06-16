@@ -191,4 +191,4 @@ app.listen(PORT, () => {
 });
 
 // Export the app for testing
-export { app, prisma };
+export { app, prisma };// Force complete rebuild Mon Jun 16 21:29:52 BST 2025
