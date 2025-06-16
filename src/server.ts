@@ -37,6 +37,8 @@ app.use(express.urlencoded({ extended: true }));
 // --- DEBUGGING: Explicit OPTIONS handler ---
 app.options('*', (req, res) => {
   console.log(`>>> Explicit OPTIONS handler hit for path: ${req.path}`);
+  console.log(`>>> Origin header received: "${req.headers.origin}"`);
+  console.log(`>>> Origin type: ${typeof req.headers.origin}`);
   
   // Define allowed origins for both development and production
   const allowedOrigins = [
@@ -47,7 +49,11 @@ app.options('*', (req, res) => {
   ];
   
   const origin = req.headers.origin;
+  console.log(`>>> Checking if "${origin}" is in allowedOrigins`);
+  console.log(`>>> Match found: ${origin && allowedOrigins.includes(origin)}`);
+  
   const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  console.log(`>>> Using allowedOrigin: "${allowedOrigin}"`);
   
   res.header('Access-Control-Allow-Origin', allowedOrigin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
