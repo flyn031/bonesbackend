@@ -39,32 +39,50 @@ const app = (0, express_1.default)();
 exports.app = app;
 const prisma = new client_1.PrismaClient();
 exports.prisma = prisma;
+
 // Middleware order is important!
 // 1. Body parsing middleware must come first
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
+
 // --- DEBUGGING: Explicit OPTIONS handler ---
 // Add this BEFORE app.use(cors({...})) to see if OPTIONS requests are handled
 app.options('*', (req, res) => {
     console.log(`>>> Explicit OPTIONS handler hit for path: ${req.path}`);
+    
+    // Define allowed origins for both development and production
+    const allowedOrigins = [
+        'http://localhost:5173',                    // Development
+        'https://bones-frontend-eb51.vercel.app'    // Production
+    ];
+    
+    const origin = req.headers.origin;
+    const allowedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    
     // Manually set CORS headers that the browser expects for preflight
-    res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+    res.header('Access-Control-Allow-Origin', allowedOrigin);
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Must allow Authorization
     res.header('Access-Control-Allow-Credentials', 'true');
-    console.log('>>> Responding to OPTIONS request with status 204');
+    console.log(`>>> Responding to OPTIONS request with origin: ${allowedOrigin} and status 204`);
     res.status(204).send(); // Respond with 204 No Content - Standard for preflight success
 });
 // --- END DEBUGGING ---
+
 // 2. CORS - Keep this AFTER the explicit OPTIONS handler
 // The cors() middleware should normally handle OPTIONS automatically,
 // but we added the above handler for debugging.
 app.use((0, cors_1.default)({
-    origin: 'http://localhost:5173', // Your confirmed frontend port
+    origin: [
+        'http://localhost:5173',                    // Development - Your local frontend
+        'https://bones-frontend-eb51.vercel.app',   // Production - Your deployed frontend
+        'https://*.vercel.app'                      // Any future Vercel deployments
+    ],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Fixed missing quotes
     allowedHeaders: ['Content-Type', 'Authorization'], // <<< Explicitly allow Authorization header
     credentials: true // Recommended for auth flows with cookies/tokens
 }));
+
 // 3. Enhanced logging middleware
 app.use((req, res, next) => {
     // Log details for non-OPTIONS requests
@@ -88,11 +106,13 @@ app.use((req, res, next) => {
     }
     next();
 });
+
 // Global error handler
 app.use((err, req, res, next) => {
     console.error('Unhandled error caught by global handler:', err);
     res.status(500).json({ error: 'Internal server error occurred.' });
 });
+
 // 4. Routes
 app.use('/api/auth', auth_1.default);
 app.use('/api/customers', customers_1.default);
@@ -101,6 +121,7 @@ app.use('/api/financial', financial_1.default);
 app.use('/api/pdf', pdf_1.default);
 app.use('/api/suppliers', suppliers_1.default);
 app.use('/api/materials', materials_1.default);
+
 // Updated: Route for dual-purpose inventory items
 // Now our special inventory endpoints are available under /api/inventory
 app.use('/api/inventory', inventory_1.default);
@@ -109,10 +130,13 @@ app.use('/api/jobs', jobs_1.default);
 app.use('/api/jobs', jobMaterials_1.default);
 app.use('/api', jobCosts_1.default);
 app.use('/api/quotes', quotes_1.default);
+
 // ADD AUDIT ROUTES - These provide audit trail functionality
 app.use('/api/audit', audit_1.default);
+
 // ADD THIS LINE: Register employee routes
 app.use('/api/employees', employeeRoutes_1.default);
+
 // Basic health check endpoint
 app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -124,7 +148,11 @@ app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         res.status(500).json({ status: 'error', database: 'disconnected', message: 'Failed to connect to database.' });
     }
 }));
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`CORS enabled for:`);
+    console.log(`  - Development: http://localhost:5173`);
+    console.log(`  - Production: https://bones-frontend-eb51.vercel.app`);
 });
