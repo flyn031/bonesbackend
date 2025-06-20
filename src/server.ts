@@ -30,9 +30,9 @@ const app = express();
 const prisma = new PrismaClient();
 
 // Middleware order is important!
-// 1. Body parsing middleware must come first
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 1. Body parsing middleware must come first - UPDATED: Increased payload limits for logo uploads
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
 // 2. Add debugging middleware to log origins
 app.use((req, res, next) => {

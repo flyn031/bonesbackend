@@ -177,7 +177,21 @@ export const getUserProfile = async (req: Request, res: Response): Promise<void>
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
-        id: true, email: true, name: true, role: true, createdAt: true,
+        id: true, 
+        email: true, 
+        name: true, 
+        role: true, 
+        createdAt: true,
+        updatedAt: true,
+        // Include company fields if they exist on User model
+        companyName: true,
+        companyAddress: true,
+        companyPhone: true,
+        companyEmail: true,
+        companyWebsite: true,
+        companyVatNumber: true,
+        companyLogo: true,
+        useCompanyDetailsOnQuotes: true
       }
     });
 
@@ -187,21 +201,8 @@ export const getUserProfile = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const companySettings = await prisma.companySettings.findFirst();
-
-    const userProfileResponse = {
-        ...user,
-        companyName: companySettings?.companyName || null,
-        companyAddress: companySettings?.companyAddress || null,
-        companyPhone: companySettings?.companyPhone || null,
-        companyEmail: companySettings?.companyEmail || null,
-        companyWebsite: companySettings?.companyWebsite || null,
-        companyVatNumber: companySettings?.companyVatNumber || null,
-        companyLogo: companySettings?.companyLogo || null,
-    };
-
     console.log('[Auth][getProfile] Successfully fetched profile for userId:', userId);
-    res.status(200).json(userProfileResponse);
+    res.status(200).json(user);
 
   } catch (error) {
     console.error('[Auth][getProfile] Error getting user profile:', error);
@@ -214,160 +215,71 @@ export const getUserProfile = async (req: Request, res: Response): Promise<void>
   }
 };
 
-// Use Request from 'express' because the 'user' property is now augmented globally
+// FIXED: Complete updateUserProfile function
 export const updateUserProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const userId = req.user?.id; // 'user' property is now available on Request
-    console.log(`[Auth][updateProfile] Attempting for userId: ${userId} with body:`, req.body);
+    const userId = req.user?.id;
+    const updateData = req.body;
+    
+    console.log('PUT /api/auth/profile - User ID:', userId);
+    console.log('PUT /api/auth/profile - Update data:', updateData);
 
     if (!userId) {
-      console.log('[Auth][updateProfile] Unauthorized - userId not in req.user');
-      res.status(401).json({ message: 'Unauthorized' });
+      res.status(401).json({ message: 'Unauthorized - User ID missing' });
       return;
     }
 
-    const { name } = req.body;
-    const {
-      companyName, companyAddress, companyPhone, companyEmail,
-      companyWebsite, companyVatNumber, companyLogo,
-      // Extracted for clarity, they will be used in createData for new settings
-      quoteReferencePrefix, lastQuoteReferenceSeq
-    } = req.body;
+    // Update the user record with ALL the provided fields
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        // Basic user fields
+        name: updateData.name,
+        // Company fields - stored directly on User model
+        companyName: updateData.companyName,
+        companyAddress: updateData.companyAddress, 
+        companyPhone: updateData.companyPhone,
+        companyEmail: updateData.companyEmail,
+        companyWebsite: updateData.companyWebsite,
+        companyVatNumber: updateData.companyVatNumber,
+        companyLogo: updateData.companyLogo,
+        // CRITICAL: Include the checkbox field
+        useCompanyDetailsOnQuotes: updateData.useCompanyDetailsOnQuotes,
+        updatedAt: new Date()
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+        // Include all company fields in response
+        companyName: true,
+        companyAddress: true,
+        companyPhone: true,
+        companyEmail: true,
+        companyWebsite: true,
+        companyVatNumber: true,
+        companyLogo: true,
+        useCompanyDetailsOnQuotes: true
+      }
+    });
 
-    const userDataToUpdate: Prisma.UserUpdateInput = {};
-    if (name !== undefined) userDataToUpdate.name = name;
+    console.log('PUT /api/auth/profile - Updated user:', {
+      id: updatedUser.id,
+      useCompanyDetailsOnQuotes: updatedUser.useCompanyDetailsOnQuotes,
+      companyName: updatedUser.companyName
+    });
 
-    let updatedUserFromDb;
-    if (Object.keys(userDataToUpdate).length > 0) {
-        updatedUserFromDb = await prisma.user.update({
-            where: { id: userId },
-            data: userDataToUpdate,
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              password: true,
-              role: true,
-              createdAt: true,
-              updatedAt: true
-            }
-        });
-        console.log(`[Auth][updateProfile] User details updated for userId: ${userId}`);
-    } else {
-        // If no user-specific data to update, just fetch the current user to build the response
-        updatedUserFromDb = await prisma.user.findUnique({ 
-          where: {id: userId},
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            password: true,
-            role: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        });
-    }
-
-    if (!updatedUserFromDb) {
-        res.status(404).json({ message: "User to update not found."});
-        return;
-    }
-    const userResponse = buildUserResponse(updatedUserFromDb);
-
-
-    const companySettingsDataToUpdate: Prisma.CompanySettingsUpdateInput = {};
-    if (companyName !== undefined) companySettingsDataToUpdate.companyName = companyName;
-    if (companyAddress !== undefined) companySettingsDataToUpdate.companyAddress = companyAddress;
-    if (companyPhone !== undefined) companySettingsDataToUpdate.companyPhone = companyPhone;
-    if (companyEmail !== undefined) companySettingsDataToUpdate.companyEmail = companyEmail;
-    if (companyWebsite !== undefined) companySettingsDataToUpdate.companyWebsite = companyWebsite;
-    if (companyVatNumber !== undefined) companySettingsDataToUpdate.companyVatNumber = companyVatNumber;
-    if (companyLogo !== undefined) companySettingsDataToUpdate.companyLogo = companyLogo;
-    // Handle quoteReferencePrefix and lastQuoteReferenceSeq as update inputs
-    if (quoteReferencePrefix !== undefined) companySettingsDataToUpdate.quoteReferencePrefix = quoteReferencePrefix;
-    if (lastQuoteReferenceSeq !== undefined) companySettingsDataToUpdate.lastQuoteReferenceSeq = lastQuoteReferenceSeq;
-
-
-    let currentCompanySettings = await prisma.companySettings.findFirst();
-    if (Object.keys(companySettingsDataToUpdate).length > 0) {
-        if (currentCompanySettings) {
-            currentCompanySettings = await prisma.companySettings.update({
-                where: { id: currentCompanySettings.id },
-                data: companySettingsDataToUpdate,
-            });
-            console.log(`[Auth][updateProfile] CompanySettings updated (ID: ${currentCompanySettings.id}).`);
-        } else {
-            // Create CompanySettings if they don't exist and there's data for them
-            // Ensure values for createData are plain strings/numbers, not update inputs
-            const createData: Prisma.CompanySettingsCreateInput = {
-                // Extract actual values from potentially Prisma update inputs
-                quoteReferencePrefix:
-                    (typeof quoteReferencePrefix === 'object' && quoteReferencePrefix !== null && 'set' in quoteReferencePrefix)
-                        ? (quoteReferencePrefix.set as string)
-                        : (quoteReferencePrefix as string), // Cast directly if it's already a string or undefined
-
-                lastQuoteReferenceSeq:
-                    (typeof lastQuoteReferenceSeq === 'object' && lastQuoteReferenceSeq !== null && 'set' in lastQuoteReferenceSeq)
-                        ? (lastQuoteReferenceSeq.set as number)
-                        : (lastQuoteReferenceSeq as number), // Cast directly if it's already a number or undefined
-
-                // Carry over other explicitly handled simple properties for creation
-                companyName: companySettingsDataToUpdate.companyName as string | undefined,
-                companyAddress: companySettingsDataToUpdate.companyAddress as string | undefined,
-                companyPhone: companySettingsDataToUpdate.companyPhone as string | undefined,
-                companyEmail: companySettingsDataToUpdate.companyEmail as string | undefined,
-                companyWebsite: companySettingsDataToUpdate.companyWebsite as string | undefined,
-                companyVatNumber: companySettingsDataToUpdate.companyVatNumber as string | undefined,
-                companyLogo: companySettingsDataToUpdate.companyLogo as string | undefined,
-                // Add more fields here if they are simple types and should be part of creation
-                // and you aren't already handling them above.
-            };
-
-            // Provide default values if required fields are still undefined for creation
-            if (createData.quoteReferencePrefix === undefined) {
-                createData.quoteReferencePrefix = 'QR';
-            }
-            if (createData.lastQuoteReferenceSeq === undefined) {
-                createData.lastQuoteReferenceSeq = 0;
-            }
-
-            // Filter out undefined values from createData if needed by Prisma's create method
-            const filteredCreateData = Object.fromEntries(
-                Object.entries(createData).filter(([, value]) => value !== undefined)
-            ) as Prisma.CompanySettingsCreateInput;
-
-
-            if (Object.keys(filteredCreateData).length > 0) {
-                 currentCompanySettings = await prisma.companySettings.create({ data: filteredCreateData });
-                 console.log(`[Auth][updateProfile] CompanySettings created as none existed (ID: ${currentCompanySettings?.id}).`);
-            }
-        }
-    }
-
-    const profileResponse = {
-        ...userResponse,
-        companyName: currentCompanySettings?.companyName || null,
-        companyAddress: currentCompanySettings?.companyAddress || null,
-        companyPhone: currentCompanySettings?.companyPhone || null,
-        companyEmail: currentCompanySettings?.companyEmail || null,
-        companyWebsite: currentCompanySettings?.companyWebsite || null,
-        companyVatNumber: currentCompanySettings?.companyVatNumber || null,
-        companyLogo: currentCompanySettings?.companyLogo || null,
-    };
-
-    console.log(`[Auth][updateProfile] Profile update processed successfully for userId: ${userId}`);
-    res.status(200).json(profileResponse);
-
+    // Return the COMPLETE updated user object
+    res.json(updatedUser);
+    
   } catch (error) {
-    console.error('[Auth][updateProfile] Error updating user profile:', error);
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2025') { // "Record to update not found"
-            res.status(404).json({ message: "Record to update not found." });
-            return;
-        }
-        console.error('[Auth][updateProfile] Prisma Error Code:', error.code, error.meta);
-    }
-    res.status(500).json({ message: 'Error updating user profile' });
+    console.error('PUT /api/auth/profile error:', error);
+    res.status(500).json({ 
+      message: 'Failed to update profile',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 };
