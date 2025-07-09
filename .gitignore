@@ -1,3 +1,30 @@
-node_modules
-# Keep environment variables out of version control
+# Dependencies
+/node_modules
+/package-lock.json
+
+# Build output
+/dist
+
+# Environment variables - Keep all local secrets out of Git
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary / backup files created by editors
+.env.save
+.env.swp
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS specific files
+.DS_Store
+
+# Prisma cache
+.prisma/cache
