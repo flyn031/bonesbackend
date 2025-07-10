@@ -29,48 +29,44 @@ const jobs_1 = __importDefault(require("./routes/jobs"));
 const quotes_1 = __importDefault(require("./routes/quotes"));
 const jobMaterials_1 = __importDefault(require("./routes/jobMaterials"));
 const audit_1 = __importDefault(require("./routes/audit"));
-// Import the fixed inventory routes
 const inventory_1 = __importDefault(require("./routes/inventory"));
-// ADD THIS LINE: Import employee routes
 const employeeRoutes_1 = __importDefault(require("./routes/employeeRoutes"));
-// 🚀 NEW: Import time entry routes for HMRC R&D
 const timeEntries_1 = __importDefault(require("./routes/timeEntries"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 exports.app = app;
 const prisma = new client_1.PrismaClient();
 exports.prisma = prisma;
-// Middleware order is important!
-// 1. Body parsing middleware must come first - UPDATED: Increased payload limits for logo uploads
 app.use(express_1.default.json({ limit: '1mb' }));
 app.use(express_1.default.urlencoded({ limit: '1mb', extended: true }));
-// 2. Add debugging middleware to log origins
 app.use((req, res, next) => {
     console.log('🔍 Origin:', req.headers.origin);
     next();
 });
-// 3. CORS with callback function for better control
 const allowedOrigins = [
-    'http://localhost:5173', // For local development
-    'https://bones-frontend-9u58.vercel.app', // Main production domain
-    'https://bones-frontend-9u58-o1l0858u1-james-oflynn-s-projects.vercel.app', // The specific one from the error
-    'https://bones-frontend-9u58-git-main-james-oflynn-s-projects.vercel.app' // The git-specific one
+    'http://localhost:5173',
+    'https://bones-frontend-9u58.vercel.app',
+    'https://bones-frontend-9u58-o1l0858u1-james-oflynn-s-projects.vercel.app',
+    'https://bones-frontend-9u58-git-main-james-oflynn-s-projects.vercel.app'
 ];
+// --- START OF THE ONLY MODIFIED SECTION ---
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
-        console.log(`🔍 CORS Check: Origin "${origin}" - Allowed: ${!origin || allowedOrigins.includes(origin)}`);
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
+        // This new logic allows requests from your hardcoded list OR any Vercel preview URL for your project.
+        const isAllowed = !origin || allowedOrigins.includes(origin) || origin.endsWith('-james-oflynn-s-projects.vercel.app');
+        console.log(`🔍 CORS Check: Origin "${origin}" - Is Allowed: ${isAllowed}`);
+        if (isAllowed) {
+            callback(null, true); // Allow the request
         }
         else {
-            callback(new Error(`Not allowed by CORS: ${origin}`));
+            callback(new Error(`Not allowed by CORS: ${origin}`)); // Block the request
         }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-// 4. Enhanced logging middleware
+// --- END OF THE ONLY MODIFIED SECTION ---
 app.use((req, res, next) => {
     if (req.method !== 'OPTIONS') {
         const authHeader = req.headers.authorization;
@@ -88,10 +84,8 @@ app.use((req, res, next) => {
     }
     next();
 });
-// 🔧 DEBUGGING: Track request flow with detailed route checking
 app.use((req, res, next) => {
     console.log(`🔍 [SERVER] ${req.method} ${req.path} - Before route registration`);
-    // 🚨 SPECIAL DEBUG FOR QUOTES
     if (req.path.startsWith('/api/quotes')) {
         console.log(`🚨 [QUOTES DEBUG] ${req.method} ${req.path} detected - checking route conflict`);
         console.log(`🚨 [QUOTES DEBUG] Original URL: ${req.originalUrl}`);
@@ -99,7 +93,6 @@ app.use((req, res, next) => {
     }
     next();
 });
-// 5. Routes - DEBUGGING EACH REGISTRATION
 console.log('🔧 [SERVER] Registering auth routes...');
 app.use('/api/auth', auth_1.default);
 console.log('🔧 [SERVER] Registering customer routes...');
@@ -114,7 +107,6 @@ console.log('🔧 [SERVER] Registering supplier routes...');
 app.use('/api/suppliers', suppliers_1.default);
 console.log('🔧 [SERVER] Registering material routes...');
 app.use('/api/materials', materials_1.default);
-// Updated: Route for dual-purpose inventory items
 console.log('🔧 [SERVER] Registering inventory routes...');
 app.use('/api/inventory', inventory_1.default);
 console.log('🔧 [SERVER] Registering dashboard routes...');
@@ -122,11 +114,7 @@ app.use('/api/dashboard', dashboard_1.default);
 console.log('🔧 [SERVER] Registering job routes...');
 app.use('/api/jobs', jobs_1.default);
 console.log('🔧 [SERVER] Registering job material routes (ALSO /api/jobs)...');
-app.use('/api/jobs', jobMaterials_1.default); // 🚨 POTENTIAL CONFLICT!
-// 🚨 FIXED: Commented out the problematic route that was intercepting all /api/* requests
-// console.log('🔧 [SERVER] Registering job cost routes (ALSO /api)...');
-// app.use('/api', jobCostRoutes); // 🚨 COMMENTED OUT - was intercepting all /api/* requests including /api/quotes
-// 🎯 CRITICAL DEBUG: Add specific middleware RIGHT BEFORE quotes router
+app.use('/api/jobs', jobMaterials_1.default);
 console.log('🔧 [SERVER] About to register quotes router...');
 app.use('/api/quotes', (req, res, next) => {
     console.log(`🎯 [SERVER] Quotes middleware hit: ${req.method} ${req.path}`);
@@ -140,10 +128,8 @@ console.log('🔧 [SERVER] Registering audit routes...');
 app.use('/api/audit', audit_1.default);
 console.log('🔧 [SERVER] Registering employee routes...');
 app.use('/api/employees', employeeRoutes_1.default);
-// 🚀 NEW: Register time entry routes for HMRC R&D functionality
 console.log('🔧 [SERVER] Registering time entry routes (HMRC R&D)...');
 app.use('/api/time-entries', timeEntries_1.default);
-// Basic health check endpoint
 app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.$queryRaw `SELECT 1`;
@@ -154,12 +140,10 @@ app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () 
         res.status(500).json({ status: 'error', database: 'disconnected', message: 'Failed to connect to database.' });
     }
 }));
-// 🔧 DEBUGGING: Catch unhandled routes
 app.use((req, res, next) => {
     console.log(`❌ [SERVER] Unhandled route: ${req.method} ${req.path}`);
     res.status(404).json({ error: 'Route not found' });
 });
-// Global error handler MUST come AFTER all routes
 app.use((err, req, res, next) => {
     console.error('🚨 [SERVER] Global error handler caught:', err);
     if (!res.headersSent) {
