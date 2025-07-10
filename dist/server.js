@@ -51,8 +51,10 @@ app.use((req, res, next) => {
 });
 // 3. CORS with callback function for better control
 const allowedOrigins = [
-    'http://localhost:5173',
-    'https://bones-frontend-9u58.vercel.app',
+    'http://localhost:5173', // For local development
+    'https://bones-frontend-9u58.vercel.app', // Main production domain
+    'https://bones-frontend-9u58-o1l0858u1-james-oflynn-s-projects.vercel.app', // The specific one from the error
+    'https://bones-frontend-9u58-git-main-james-oflynn-s-projects.vercel.app' // The git-specific one
 ];
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
@@ -168,7 +170,8 @@ const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`CORS enabled for:`);
-    console.log(`  - Development: http://localhost:5173`);
-    console.log(`  - Production: https://bones-frontend-9u58.vercel.app`);
+    allowedOrigins.forEach(origin => {
+        console.log(`  - ${origin}`);
+    });
     console.log('🔧 [SERVER] All routes registered. Server ready.');
 });
