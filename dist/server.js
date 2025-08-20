@@ -32,6 +32,9 @@ const audit_1 = __importDefault(require("./routes/audit"));
 const inventory_1 = __importDefault(require("./routes/inventory"));
 const employeeRoutes_1 = __importDefault(require("./routes/employeeRoutes"));
 const timeEntries_1 = __importDefault(require("./routes/timeEntries"));
+// Smart Quote Builder imports
+const quoteItemSearch_1 = __importDefault(require("./routes/quoteItemSearch"));
+const customerIntelligence_1 = __importDefault(require("./routes/customerIntelligence"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 exports.app = app;
@@ -130,6 +133,13 @@ console.log('🔧 [SERVER] Registering employee routes...');
 app.use('/api/employees', employeeRoutes_1.default);
 console.log('🔧 [SERVER] Registering time entry routes (HMRC R&D)...');
 app.use('/api/time-entries', timeEntries_1.default);
+// Smart Quote Builder routes
+console.log('🔧 [SERVER] Registering smart quote routes...');
+console.log('🔧 [SERVER] Registering quote item search routes...');
+app.use('/api/quote-items', quoteItemSearch_1.default);
+console.log('🔧 [SERVER] Registering customer intelligence routes...');
+app.use('/api/customer-intelligence', customerIntelligence_1.default);
+console.log('🚀 [SERVER] Smart Quote Builder routes ready!');
 app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         yield prisma.$queryRaw `SELECT 1`;

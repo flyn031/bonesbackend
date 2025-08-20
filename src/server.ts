@@ -18,6 +18,9 @@ import auditRoutes from './routes/audit';
 import inventoryRoutes from './routes/inventory';
 import employeeRoutes from './routes/employeeRoutes';
 import timeEntryRoutes from './routes/timeEntries';
+// Smart Quote Builder imports
+import quoteItemSearchRoutes from './routes/quoteItemSearch';
+import customerIntelligenceRoutes from './routes/customerIntelligence';
 
 dotenv.config();
 const app = express();
@@ -124,6 +127,14 @@ console.log('🔧 [SERVER] Registering employee routes...');
 app.use('/api/employees', employeeRoutes);
 console.log('🔧 [SERVER] Registering time entry routes (HMRC R&D)...');
 app.use('/api/time-entries', timeEntryRoutes);
+
+// Smart Quote Builder routes
+console.log('🔧 [SERVER] Registering smart quote routes...');
+console.log('🔧 [SERVER] Registering quote item search routes...');
+app.use('/api/quote-items', quoteItemSearchRoutes);
+console.log('🔧 [SERVER] Registering customer intelligence routes...');
+app.use('/api/customer-intelligence', customerIntelligenceRoutes);
+console.log('🚀 [SERVER] Smart Quote Builder routes ready!');
 
 app.get('/health', async (req, res) => {
   try {
