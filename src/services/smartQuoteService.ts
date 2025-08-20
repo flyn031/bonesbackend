@@ -77,7 +77,7 @@ export class SmartQuoteService {
 
       const itemsWithDetails = await Promise.all(
         frequentItems.map(async (item) => {
-          let material = null;
+          let material: any = null;
           if (item.materialId) {
             material = await prisma.material.findUnique({
               where: { id: item.materialId }
