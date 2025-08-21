@@ -1,0 +1,349 @@
+// Quote Item Search Service
+// Location: bonesbackend/src/services/quoteItemSearchService.ts
+
+import prisma from '../utils/prismaClient';
+
+export interface QuoteItemSearchFilters {
+  searchTerm?: string;
+  category?: string;
+  priceMin?: number;
+  priceMax?: number;
+  customerId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  materialCode?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface HistoricalQuoteItem {
+  id: string;
+  itemName: string;
+  description: string;
+  unitPrice: number;
+  quantity: number;
+  totalPrice: number;
+  materialCode?: string;
+  category?: string;
+  sourceQuoteId: string;
+  sourceQuoteNumber: string;
+  sourceCustomerId: string;
+  sourceCustomerName: string;
+  createdAt: Date;
+  lastUsed: Date;
+}
+
+export interface QuoteItemSearchResult {
+  items: HistoricalQuoteItem[];
+  totalCount: number;
+  categories: string[];
+  priceRange: {
+    min: number;
+    max: number;
+  };
+}
+
+class QuoteItemSearchService {
+  /**
+   * Search through historical quote items with advanced filtering
+   */
+  async searchQuoteItems(filters: QuoteItemSearchFilters): Promise<QuoteItemSearchResult> {
+    try {
+      // Build the where clause based on filters
+      const whereClause: any = {
+        // Only include items from quotes that are not drafts
+        quote: {
+          status: {
+            not: 'DRAFT'
+          }
+        }
+      };
+
+      // Add search term filter
+      if (filters.searchTerm) {
+        whereClause.OR = [
+          { itemName: { contains: filters.searchTerm, mode: 'insensitive' } },
+          { description: { contains: filters.searchTerm, mode: 'insensitive' } },
+          { materialCode: { contains: filters.searchTerm, mode: 'insensitive' } }
+        ];
+      }
+
+      // Add price range filters
+      if (filters.priceMin !== undefined) {
+        whereClause.unitPrice = { ...whereClause.unitPrice, gte: filters.priceMin };
+      }
+      if (filters.priceMax !== undefined) {
+        whereClause.unitPrice = { ...whereClause.unitPrice, lte: filters.priceMax };
+      }
+
+      // Add customer filter
+      if (filters.customerId) {
+        whereClause.quote.customerId = filters.customerId;
+      }
+
+      // Add date range filters
+      if (filters.dateFrom || filters.dateTo) {
+        whereClause.createdAt = {};
+        if (filters.dateFrom) {
+          whereClause.createdAt.gte = filters.dateFrom;
+        }
+        if (filters.dateTo) {
+          whereClause.createdAt.lte = filters.dateTo;
+        }
+      }
+
+      // Add category filter (assuming category is stored in a field)
+      if (filters.category) {
+        whereClause.category = filters.category;
+      }
+
+      // Add material code filter
+      if (filters.materialCode) {
+        whereClause.materialCode = { contains: filters.materialCode, mode: 'insensitive' };
+      }
+
+      // Get total count for pagination
+      const totalCount = await prisma.quoteItem.count({ where: whereClause });
+
+      // Get the items with pagination
+      const quoteItems = await prisma.quoteItem.findMany({
+        where: whereClause,
+        include: {
+          quote: {
+            select: {
+              id: true,
+              quoteNumber: true,
+              customerId: true,
+              customer: {
+                select: {
+                  companyName: true
+                }
+              },
+              createdAt: true
+            }
+          }
+        },
+        orderBy: [
+          { createdAt: 'desc' },
+          { itemName: 'asc' }
+        ],
+        take: filters.limit || 50,
+        skip: filters.offset || 0
+      });
+
+      // Transform the results
+      const items: HistoricalQuoteItem[] = quoteItems.map(item => ({
+        id: item.id,
+        itemName: item.itemName,
+        description: item.description || '',
+        unitPrice: item.unitPrice,
+        quantity: item.quantity,
+        totalPrice: item.unitPrice * item.quantity,
+        materialCode: item.materialCode || undefined,
+        category: item.category || undefined,
+        sourceQuoteId: item.quote.id,
+        sourceQuoteNumber: item.quote.quoteNumber,
+        sourceCustomerId: item.quote.customerId,
+        sourceCustomerName: item.quote.customer?.companyName || 'Unknown Customer',
+        createdAt: item.createdAt,
+        lastUsed: item.createdAt // Using createdAt as lastUsed for now
+      }));
+
+      // Get unique categories for filter options
+      const categories = await this.getAvailableCategories(whereClause);
+
+      // Get price range for filter options
+      const priceRange = await this.getPriceRange(whereClause);
+
+      return {
+        items,
+        totalCount,
+        categories,
+        priceRange
+      };
+
+    } catch (error) {
+      console.error('Error searching quote items:', error);
+      throw new Error('Failed to search quote items');
+    }
+  }
+
+  /**
+   * Get items from a specific quote for copying
+   */
+  async getQuoteItems(quoteId: string): Promise<HistoricalQuoteItem[]> {
+    try {
+      const quoteItems = await prisma.quoteItem.findMany({
+        where: { quoteId },
+        include: {
+          quote: {
+            select: {
+              id: true,
+              quoteNumber: true,
+              customerId: true,
+              customer: {
+                select: {
+                  companyName: true
+                }
+              },
+              createdAt: true
+            }
+          }
+        },
+        orderBy: { itemName: 'asc' }
+      });
+
+      return quoteItems.map(item => ({
+        id: item.id,
+        itemName: item.itemName,
+        description: item.description || '',
+        unitPrice: item.unitPrice,
+        quantity: item.quantity,
+        totalPrice: item.unitPrice * item.quantity,
+        materialCode: item.materialCode || undefined,
+        category: item.category || undefined,
+        sourceQuoteId: item.quote.id,
+        sourceQuoteNumber: item.quote.quoteNumber,
+        sourceCustomerId: item.quote.customerId,
+        sourceCustomerName: item.quote.customer?.companyName || 'Unknown Customer',
+        createdAt: item.createdAt,
+        lastUsed: item.createdAt
+      }));
+
+    } catch (error) {
+      console.error('Error getting quote items:', error);
+      throw new Error('Failed to get quote items');
+    }
+  }
+
+  /**
+   * Get frequently used items across all quotes
+   */
+  async getFrequentItems(limit: number = 20): Promise<HistoricalQuoteItem[]> {
+    try {
+      const frequentItems = await prisma.quoteItem.groupBy({
+        by: ['itemName', 'description', 'unitPrice'],
+        _count: {
+          itemName: true
+        },
+        _avg: {
+          unitPrice: true,
+          quantity: true
+        },
+        orderBy: {
+          _count: {
+            itemName: 'desc'
+          }
+        },
+        take: limit
+      });
+
+      // Get additional details for each frequent item
+      const items: HistoricalQuoteItem[] = [];
+      
+      for (const item of frequentItems) {
+        const latestExample = await prisma.quoteItem.findFirst({
+          where: {
+            itemName: item.itemName,
+            description: item.description
+          },
+          include: {
+            quote: {
+              select: {
+                id: true,
+                quoteNumber: true,
+                customerId: true,
+                customer: { select: { companyName: true } }
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (latestExample) {
+          items.push({
+            id: latestExample.id,
+            itemName: item.itemName,
+            description: item.description || '',
+            unitPrice: item._avg.unitPrice || 0,
+            quantity: Math.round(item._avg.quantity || 1),
+            totalPrice: (item._avg.unitPrice || 0) * Math.round(item._avg.quantity || 1),
+            materialCode: latestExample.materialCode || undefined,
+            category: latestExample.category || undefined,
+            sourceQuoteId: latestExample.quote.id,
+            sourceQuoteNumber: latestExample.quote.quoteNumber,
+            sourceCustomerId: latestExample.quote.customerId,
+            sourceCustomerName: latestExample.quote.customer?.companyName || 'Unknown Customer',
+            createdAt: latestExample.createdAt,
+            lastUsed: latestExample.createdAt
+          });
+        }
+      }
+
+      return items;
+
+    } catch (error) {
+      console.error('Error getting frequent items:', error);
+      throw new Error('Failed to get frequent items');
+    }
+  }
+
+  /**
+   * Get available categories for filtering
+   */
+  private async getAvailableCategories(whereClause: any): Promise<string[]> {
+    try {
+      const categories = await prisma.quoteItem.findMany({
+        where: whereClause,
+        select: { category: true },
+        distinct: ['category']
+      });
+
+      return categories
+        .map(item => item.category)
+        .filter(category => category !== null && category !== undefined)
+        .sort() as string[];
+
+    } catch (error) {
+      console.error('Error getting categories:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get price range for filtering
+   */
+  private async getPriceRange(whereClause: any): Promise<{ min: number; max: number }> {
+    try {
+      const priceStats = await prisma.quoteItem.aggregate({
+        where: whereClause,
+        _min: { unitPrice: true },
+        _max: { unitPrice: true }
+      });
+
+      return {
+        min: priceStats._min.unitPrice || 0,
+        max: priceStats._max.unitPrice || 0
+      };
+
+    } catch (error) {
+      console.error('Error getting price range:', error);
+      return { min: 0, max: 0 };
+    }
+  }
+
+  /**
+   * Get similar items based on name/description
+   */
+  async getSimilarItems(itemName: string, limit: number = 10): Promise<HistoricalQuoteItem[]> {
+    const filters: QuoteItemSearchFilters = {
+      searchTerm: itemName,
+      limit
+    };
+
+    const result = await this.searchQuoteItems(filters);
+    return result.items;
+  }
+}
+
+export const quoteItemSearchService = new QuoteItemSearchService();

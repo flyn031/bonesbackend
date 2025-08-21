@@ -1,0 +1,479 @@
+// Bundle Recommendation Service
+// Location: bonesbackend/src/services/bundleRecommendationService.ts
+
+import prisma from '../utils/prismaClient';
+
+export interface QuickAssemblyTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: 'warehouse' | 'packaging' | 'maintenance' | 'custom';
+  itemCount: number;
+  estimatedValue: number;
+  icon: string;
+  items: {
+    itemName: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    required: boolean;
+  }[];
+}
+
+export interface BundleRecommendation {
+  bundleId: string;
+  name: string;
+  description: string;
+  items: {
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+  totalPrice: number;
+  savings: number;
+  confidence: number;
+  reason: string;
+}
+
+export interface BundleAnalysis {
+  itemCombinations: Map<string, {
+    frequency: number;
+    averageValue: number;
+    items: Array<{
+      name: string;
+      avgPrice: number;
+      avgQuantity: number;
+    }>;
+  }>;
+  topBundles: BundleRecommendation[];
+  seasonalPatterns: Array<{
+    month: number;
+    popularBundles: string[];
+  }>;
+}
+
+class BundleRecommendationService {
+  /**
+   * Get quick assembly templates for common product categories
+   */
+  async getQuickAssemblyTemplates(): Promise<QuickAssemblyTemplate[]> {
+    try {
+      // Pre-defined templates based on common industry needs
+      const templates: QuickAssemblyTemplate[] = [
+        {
+          id: 'warehouse_basic',
+          name: 'Basic Warehouse Line',
+          description: 'Standard conveyor setup for warehouse operations',
+          category: 'warehouse',
+          itemCount: 8,
+          estimatedValue: 15000,
+          icon: '🏭',
+          items: [
+            { itemName: 'Belt Conveyor 10m', description: 'Main transport belt', quantity: 2, unitPrice: 2500, required: true },
+            { itemName: 'Gravity Roller Conveyor', description: 'Loading section', quantity: 1, unitPrice: 1200, required: true },
+            { itemName: 'Belt Support Frame', description: 'Structural support', quantity: 4, unitPrice: 450, required: true },
+            { itemName: 'Control Panel', description: 'Operation controls', quantity: 1, unitPrice: 800, required: true },
+            { itemName: 'Safety Guards', description: 'Safety equipment', quantity: 6, unitPrice: 150, required: true },
+            { itemName: 'Emergency Stop Button', description: 'Safety controls', quantity: 2, unitPrice: 75, required: true },
+            { itemName: 'Junction Box', description: 'Electrical connections', quantity: 3, unitPrice: 125, required: false },
+            { itemName: 'Installation Kit', description: 'Mounting hardware', quantity: 1, unitPrice: 350, required: false }
+          ]
+        },
+        {
+          id: 'packaging_line',
+          name: 'Packaging Conveyor System',
+          description: 'Complete packaging line setup',
+          category: 'packaging',
+          itemCount: 12,
+          estimatedValue: 22000,
+          icon: '📦',
+          items: [
+            { itemName: 'Belt Conveyor 15m', description: 'Main packaging belt', quantity: 1, unitPrice: 3500, required: true },
+            { itemName: 'Accumulation Conveyor', description: 'Product accumulation', quantity: 1, unitPrice: 2800, required: true },
+            { itemName: 'Diverter Unit', description: 'Product sorting', quantity: 1, unitPrice: 1900, required: true },
+            { itemName: 'Weighing Station', description: 'Product weighing', quantity: 1, unitPrice: 2200, required: true },
+            { itemName: 'Labeling Station', description: 'Product labeling', quantity: 1, unitPrice: 1800, required: true },
+            { itemName: 'Reject Conveyor', description: 'Defect handling', quantity: 1, unitPrice: 1200, required: false },
+            { itemName: 'Barcode Scanner', description: 'Product identification', quantity: 2, unitPrice: 450, required: false },
+            { itemName: 'Control System', description: 'Automated controls', quantity: 1, unitPrice: 2500, required: true },
+            { itemName: 'HMI Touch Panel', description: 'User interface', quantity: 1, unitPrice: 650, required: true },
+            { itemName: 'Photo Eye Sensors', description: 'Product detection', quantity: 8, unitPrice: 85, required: true },
+            { itemName: 'Safety Light Curtain', description: 'Safety system', quantity: 2, unitPrice: 380, required: true },
+            { itemName: 'Integration Package', description: 'System integration', quantity: 1, unitPrice: 1200, required: false }
+          ]
+        },
+        {
+          id: 'maintenance_kit',
+          name: 'Maintenance & Service Package',
+          description: 'Essential maintenance items and spare parts',
+          category: 'maintenance',
+          itemCount: 15,
+          estimatedValue: 3500,
+          icon: '🔧',
+          items: [
+            { itemName: 'Belt Conveyor Belt', description: 'Replacement belt', quantity: 2, unitPrice: 450, required: true },
+            { itemName: 'Drive Motor', description: 'Replacement motor', quantity: 1, unitPrice: 380, required: true },
+            { itemName: 'Bearing Set', description: 'Roller bearings', quantity: 4, unitPrice: 65, required: true },
+            { itemName: 'Belt Tensioner', description: 'Belt adjustment', quantity: 2, unitPrice: 125, required: true },
+            { itemName: 'Control Relay', description: 'Control components', quantity: 5, unitPrice: 35, required: true },
+            { itemName: 'Photo Eye Sensor', description: 'Sensor replacement', quantity: 3, unitPrice: 85, required: true },
+            { itemName: 'Emergency Stop Button', description: 'Safety replacement', quantity: 2, unitPrice: 75, required: true },
+            { itemName: 'Lubricant Kit', description: 'Maintenance supplies', quantity: 1, unitPrice: 45, required: true },
+            { itemName: 'Cleaning Supplies', description: 'System cleaning', quantity: 1, unitPrice: 65, required: false },
+            { itemName: 'Electrical Contactors', description: 'Electrical spares', quantity: 3, unitPrice: 95, required: false },
+            { itemName: 'Fuses & Breakers', description: 'Electrical protection', quantity: 1, unitPrice: 85, required: false },
+            { itemName: 'Documentation Update', description: 'Updated manuals', quantity: 1, unitPrice: 150, required: false },
+            { itemName: 'Training Session', description: 'Maintenance training', quantity: 1, unitPrice: 500, required: false },
+            { itemName: 'Annual Service Contract', description: 'Service agreement', quantity: 1, unitPrice: 800, required: false },
+            { itemName: 'Emergency Call-out', description: 'Priority support', quantity: 1, unitPrice: 300, required: false }
+          ]
+        },
+        {
+          id: 'small_operation',
+          name: 'Small Operation Starter',
+          description: 'Compact solution for small facilities',
+          category: 'warehouse',
+          itemCount: 6,
+          estimatedValue: 8500,
+          icon: '🏪',
+          items: [
+            { itemName: 'Belt Conveyor 5m', description: 'Compact main belt', quantity: 1, unitPrice: 1800, required: true },
+            { itemName: 'Gravity Roller Section', description: 'Manual handling area', quantity: 2, unitPrice: 650, required: true },
+            { itemName: 'Mobile Control Unit', description: 'Portable controls', quantity: 1, unitPrice: 420, required: true },
+            { itemName: 'Adjustable Legs', description: 'Height adjustment', quantity: 4, unitPrice: 85, required: true },
+            { itemName: 'Basic Safety Kit', description: 'Essential safety', quantity: 1, unitPrice: 280, required: true },
+            { itemName: 'Quick Setup Guide', description: 'Installation support', quantity: 1, unitPrice: 150, required: false }
+          ]
+        }
+      ];
+
+      // Enhance templates with real pricing data where available
+      for (const template of templates) {
+        let totalValue = 0;
+        
+        for (const item of template.items) {
+          // Try to get current pricing from recent quotes
+          const recentPrice = await this.getRecentItemPrice(item.itemName);
+          if (recentPrice) {
+            item.unitPrice = recentPrice;
+          }
+          totalValue += item.unitPrice * item.quantity;
+        }
+        
+        template.estimatedValue = totalValue;
+      }
+
+      return templates;
+
+    } catch (error) {
+      console.error('Error getting quick assembly templates:', error);
+      throw new Error('Failed to get quick assembly templates');
+    }
+  }
+
+  /**
+   * Get dynamic bundle recommendations based on historical data
+   */
+  async getDynamicBundleRecommendations(customerId?: string, currentItems: string[] = []): Promise<BundleRecommendation[]> {
+    try {
+      // Get historical quote data for bundle analysis
+      const whereClause: any = {
+        status: {
+          in: ['APPROVED', 'CONVERTED']
+        }
+      };
+
+      if (customerId) {
+        whereClause.customerId = customerId;
+      }
+
+      const quotes = await prisma.quote.findMany({
+        where: whereClause,
+        include: {
+          items: true,
+          customer: {
+            select: {
+              industry: true
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 100 // Analyze last 100 quotes
+      });
+
+      // Analyze item combinations
+      const bundleAnalysis = this.analyzeBundleCombinations(quotes);
+      
+      // Generate recommendations
+      const recommendations: BundleRecommendation[] = [];
+      let bundleIndex = 0;
+
+      for (const [combination, data] of bundleAnalysis.itemCombinations.entries()) {
+        if (data.frequency >= 3 && data.items.length >= 2) { // Must appear together at least 3 times
+          const confidence = Math.min(95, 40 + (data.frequency * 8));
+          const basePrice = data.averageValue;
+          const savings = basePrice * 0.08; // 8% bundle discount
+
+          // Check if any current items are in this bundle
+          const hasCurrentItems = currentItems.some(current => 
+            data.items.some(bundleItem => 
+              bundleItem.name.toLowerCase().includes(current.toLowerCase())
+            )
+          );
+
+          // Boost confidence if customer already has items from this bundle
+          const finalConfidence = hasCurrentItems ? Math.min(95, confidence + 15) : confidence;
+
+          recommendations.push({
+            bundleId: `dynamic_${bundleIndex++}`,
+            name: this.generateBundleName(data.items),
+            description: `Items frequently purchased together (${data.frequency} times)`,
+            items: data.items.map(item => ({
+              itemName: item.name,
+              quantity: Math.round(item.avgQuantity),
+              unitPrice: item.avgPrice
+            })),
+            totalPrice: basePrice - savings,
+            savings,
+            confidence: finalConfidence,
+            reason: `Purchased together ${data.frequency} times by ${customerId ? 'this customer' : 'other customers'}`
+          });
+        }
+      }
+
+      return recommendations
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 8); // Return top 8 recommendations
+
+    } catch (error) {
+      console.error('Error getting dynamic bundle recommendations:', error);
+      throw new Error('Failed to get dynamic bundle recommendations');
+    }
+  }
+
+  /**
+   * Get seasonal bundle recommendations
+   */
+  async getSeasonalRecommendations(month: number): Promise<BundleRecommendation[]> {
+    try {
+      // Get quotes from the same month in previous years
+      const seasonalQuotes = await prisma.quote.findMany({
+        where: {
+          status: {
+            in: ['APPROVED', 'CONVERTED']
+          },
+          createdAt: {
+            // Get quotes from this month in the last 3 years
+            gte: new Date(new Date().getFullYear() - 3, month - 1, 1),
+            lt: new Date(new Date().getFullYear() - 3, month, 1)
+          }
+        },
+        include: {
+          items: true
+        }
+      });
+
+      // Add current year and previous 2 years
+      for (let yearOffset = 0; yearOffset < 3; yearOffset++) {
+        const year = new Date().getFullYear() - yearOffset;
+        const additionalQuotes = await prisma.quote.findMany({
+          where: {
+            status: {
+              in: ['APPROVED', 'CONVERTED']
+            },
+            createdAt: {
+              gte: new Date(year, month - 1, 1),
+              lt: new Date(year, month, 1)
+            }
+          },
+          include: {
+            items: true
+          }
+        });
+        seasonalQuotes.push(...additionalQuotes);
+      }
+
+      // Analyze seasonal patterns
+      const bundleAnalysis = this.analyzeBundleCombinations(seasonalQuotes);
+      const recommendations: BundleRecommendation[] = [];
+
+      let bundleIndex = 0;
+      for (const [combination, data] of bundleAnalysis.itemCombinations.entries()) {
+        if (data.frequency >= 2 && data.items.length >= 2) {
+          const confidence = Math.min(90, 35 + (data.frequency * 10));
+          const basePrice = data.averageValue;
+          const savings = basePrice * 0.06; // 6% seasonal discount
+
+          recommendations.push({
+            bundleId: `seasonal_${month}_${bundleIndex++}`,
+            name: `${this.getMonthName(month)} ${this.generateBundleName(data.items)}`,
+            description: `Popular combination during ${this.getMonthName(month)}`,
+            items: data.items.map(item => ({
+              itemName: item.name,
+              quantity: Math.round(item.avgQuantity),
+              unitPrice: item.avgPrice
+            })),
+            totalPrice: basePrice - savings,
+            savings,
+            confidence,
+            reason: `Seasonal trend - popular in ${this.getMonthName(month)}`
+          });
+        }
+      }
+
+      return recommendations
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 5);
+
+    } catch (error) {
+      console.error('Error getting seasonal recommendations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Analyze bundle combinations from quote data
+   */
+  private analyzeBundleCombinations(quotes: any[]): BundleAnalysis {
+    const itemCombinations = new Map<string, {
+      frequency: number;
+      averageValue: number;
+      items: Array<{
+        name: string;
+        avgPrice: number;
+        avgQuantity: number;
+      }>;
+    }>();
+
+    quotes.forEach(quote => {
+      if (quote.items.length >= 2) {
+        // Create combinations of 2-5 items
+        for (let size = 2; size <= Math.min(5, quote.items.length); size++) {
+          const combinations = this.getCombinations(quote.items, size);
+          
+          combinations.forEach(combination => {
+            const sortedItems = combination.sort((a, b) => a.itemName.localeCompare(b.itemName));
+            const key = sortedItems.map(item => item.itemName).join('|');
+            
+            const totalValue = sortedItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+            
+            const existing = itemCombinations.get(key);
+            if (existing) {
+              existing.frequency++;
+              existing.averageValue = (existing.averageValue + totalValue) / 2;
+              // Update average prices and quantities
+              existing.items.forEach((bundleItem, index) => {
+                bundleItem.avgPrice = (bundleItem.avgPrice + sortedItems[index].unitPrice) / 2;
+                bundleItem.avgQuantity = (bundleItem.avgQuantity + sortedItems[index].quantity) / 2;
+              });
+            } else {
+              itemCombinations.set(key, {
+                frequency: 1,
+                averageValue: totalValue,
+                items: sortedItems.map(item => ({
+                  name: item.itemName,
+                  avgPrice: item.unitPrice,
+                  avgQuantity: item.quantity
+                }))
+              });
+            }
+          });
+        }
+      }
+    });
+
+    // Convert to top bundles
+    const topBundles: BundleRecommendation[] = [];
+    // This would be filled by the calling function
+
+    return {
+      itemCombinations,
+      topBundles,
+      seasonalPatterns: [] // Would be calculated separately
+    };
+  }
+
+  /**
+   * Generate combinations of items
+   */
+  private getCombinations<T>(array: T[], size: number): T[][] {
+    if (size > array.length || size <= 0) return [];
+    if (size === 1) return array.map(item => [item]);
+    
+    const combinations: T[][] = [];
+    
+    for (let i = 0; i < array.length - size + 1; i++) {
+      const smallerCombinations = this.getCombinations(array.slice(i + 1), size - 1);
+      smallerCombinations.forEach(combination => {
+        combinations.push([array[i], ...combination]);
+      });
+    }
+    
+    return combinations;
+  }
+
+  /**
+   * Generate a descriptive name for a bundle
+   */
+  private generateBundleName(items: Array<{ name: string }>): string {
+    if (items.length === 0) return 'Bundle Package';
+    
+    const firstItem = items[0].name;
+    
+    // Try to identify the main category
+    if (firstItem.toLowerCase().includes('conveyor')) {
+      return 'Conveyor System Bundle';
+    } else if (firstItem.toLowerCase().includes('safety')) {
+      return 'Safety Equipment Package';
+    } else if (firstItem.toLowerCase().includes('control')) {
+      return 'Control System Bundle';
+    } else if (firstItem.toLowerCase().includes('maintenance')) {
+      return 'Maintenance Kit';
+    } else {
+      return `${firstItem} Package`;
+    }
+  }
+
+  /**
+   * Get recent price for an item
+   */
+  private async getRecentItemPrice(itemName: string): Promise<number | null> {
+    try {
+      const recentItem = await prisma.quoteItem.findFirst({
+        where: {
+          itemName: {
+            equals: itemName,
+            mode: 'insensitive'
+          },
+          quote: {
+            status: {
+              in: ['APPROVED', 'CONVERTED']
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      return recentItem?.unitPrice || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Get month name from number
+   */
+  private getMonthName(month: number): string {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[month - 1] || 'Unknown';
+  }
+}
+
+export const bundleRecommendationService = new BundleRecommendationService();

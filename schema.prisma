@@ -334,6 +334,7 @@ model Quote {
   customerId        String
   title             String
   description       String?
+  notes             String?         // Add this line
   status            QuoteStatus     @default(DRAFT)
   totalAmount       Float           @default(0)
   validUntil        DateTime?

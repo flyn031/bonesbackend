@@ -7,6 +7,7 @@ interface QuoteInputData {
   customerId: string;
   title: string;
   description?: string;
+  notes?: string;   
   totalAmount?: number; // Frontend might send number, backend should handle as Decimal
   validUntil?: Date;
   createdById: string;
@@ -415,6 +416,7 @@ export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInput
      const dataToUpdate: Prisma.QuoteUpdateInput = {};
      if (data.title !== undefined) dataToUpdate.title = data.title;
      if (data.description !== undefined) dataToUpdate.description = data.description;
+     if (data.notes !== undefined) dataToUpdate.notes = data.notes;
      if (data.validUntil !== undefined) dataToUpdate.validUntil = data.validUntil;
      if (data.customerReference !== undefined) dataToUpdate.customerReference = data.customerReference;
      if (data.contactEmail !== undefined) dataToUpdate.contactEmail = data.contactEmail;

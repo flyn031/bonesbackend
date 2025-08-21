@@ -392,6 +392,8 @@ const updateDraftQuote = (quoteId, data) => __awaiter(void 0, void 0, void 0, fu
         dataToUpdate.title = data.title;
     if (data.description !== undefined)
         dataToUpdate.description = data.description;
+    if (data.notes !== undefined)
+        dataToUpdate.notes = data.notes;
     if (data.validUntil !== undefined)
         dataToUpdate.validUntil = data.validUntil;
     if (data.customerReference !== undefined)

@@ -78,6 +78,7 @@ function prepareQuoteForFrontend(quote) {
         id: quote.id,
         title: quote.title || '',
         description: quote.description || '',
+        notes: quote.notes || '',
         status: quote.status || 'DRAFT',
         customerId: quote.customerId || '',
         createdById: quote.createdById || '',

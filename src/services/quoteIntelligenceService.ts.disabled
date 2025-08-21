@@ -1,0 +1,502 @@
+// Quote Intelligence Service
+// Location: bonesbackend/src/services/quoteIntelligenceService.ts
+
+import prisma from '../utils/prismaClient';
+
+export interface QuoteHealth {
+  score: number; // 0-100
+  margin: {
+    percentage: number;
+    status: 'excellent' | 'good' | 'acceptable' | 'poor';
+    target: number;
+  };
+  pricing: {
+    competitive: boolean;
+    industryAverage: number;
+    recommendation: 'increase' | 'decrease' | 'maintain';
+  };
+  inventory: {
+    allAvailable: boolean;
+    lowStockItems: string[];
+    leadTimeWarnings: string[];
+  };
+  winProbability: {
+    percentage: number;
+    factors: string[];
+  };
+}
+
+export interface QuoteItem {
+  itemName: string;
+  description?: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  materialCode?: string;
+}
+
+export interface PricingIntelligence {
+  itemName: string;
+  currentPrice: number;
+  marketAnalysis: {
+    averagePrice: number;
+    priceRange: { min: number; max: number };
+    competitivePosition: 'below' | 'competitive' | 'above';
+  };
+  historicalTrend: {
+    direction: 'increasing' | 'stable' | 'decreasing';
+    changePercentage: number;
+    lastUpdated: Date;
+  };
+  recommendation: {
+    suggestedPrice: number;
+    reasoning: string;
+    confidence: number;
+  };
+}
+
+class QuoteIntelligenceService {
+  /**
+   * Analyze quote health and provide comprehensive scoring
+   */
+  async analyzeQuoteHealth(customerId: string, items: QuoteItem[], totalValue: number): Promise<QuoteHealth> {
+    try {
+      // Calculate margin analysis
+      const marginAnalysis = await this.calculateMarginAnalysis(items, totalValue);
+      
+      // Analyze pricing competitiveness
+      const pricingAnalysis = await this.analyzePricingCompetitiveness(items, customerId);
+      
+      // Check inventory availability
+      const inventoryAnalysis = await this.checkInventoryAvailability(items);
+      
+      // Calculate win probability
+      const winProbability = await this.calculateWinProbability(customerId, totalValue, items);
+      
+      // Calculate overall health score
+      const score = this.calculateOverallScore(marginAnalysis, pricingAnalysis, inventoryAnalysis, winProbability);
+
+      return {
+        score,
+        margin: marginAnalysis,
+        pricing: pricingAnalysis,
+        inventory: inventoryAnalysis,
+        winProbability
+      };
+
+    } catch (error) {
+      console.error('Error analyzing quote health:', error);
+      throw new Error('Failed to analyze quote health');
+    }
+  }
+
+  /**
+   * Get pricing intelligence for specific items
+   */
+  async getPricingIntelligence(items: QuoteItem[]): Promise<PricingIntelligence[]> {
+    try {
+      const intelligence: PricingIntelligence[] = [];
+
+      for (const item of items) {
+        // Get historical pricing data for this item
+        const historicalData = await prisma.quoteItem.findMany({
+          where: {
+            itemName: {
+              equals: item.itemName,
+              mode: 'insensitive'
+            },
+            quote: {
+              status: {
+                in: ['APPROVED', 'CONVERTED']
+              }
+            }
+          },
+          select: {
+            unitPrice: true,
+            createdAt: true
+          },
+          orderBy: {
+            createdAt: 'desc'
+          },
+          take: 50 // Last 50 instances
+        });
+
+        if (historicalData.length > 0) {
+          const prices = historicalData.map(d => d.unitPrice);
+          const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+          const minPrice = Math.min(...prices);
+          const maxPrice = Math.max(...prices);
+
+          // Calculate price trend
+          const recentPrices = historicalData.slice(0, 10).map(d => d.unitPrice);
+          const olderPrices = historicalData.slice(-10).map(d => d.unitPrice);
+          const recentAvg = recentPrices.reduce((sum, p) => sum + p, 0) / recentPrices.length;
+          const olderAvg = olderPrices.reduce((sum, p) => sum + p, 0) / olderPrices.length;
+          const changePercentage = ((recentAvg - olderAvg) / olderAvg) * 100;
+
+          let direction: 'increasing' | 'stable' | 'decreasing' = 'stable';
+          if (changePercentage > 5) direction = 'increasing';
+          else if (changePercentage < -5) direction = 'decreasing';
+
+          // Determine competitive position
+          let competitivePosition: 'below' | 'competitive' | 'above' = 'competitive';
+          if (item.unitPrice < averagePrice * 0.9) competitivePosition = 'below';
+          else if (item.unitPrice > averagePrice * 1.1) competitivePosition = 'above';
+
+          // Generate pricing recommendation
+          const recommendation = this.generatePricingRecommendation(
+            item.unitPrice,
+            averagePrice,
+            direction,
+            competitivePosition
+          );
+
+          intelligence.push({
+            itemName: item.itemName,
+            currentPrice: item.unitPrice,
+            marketAnalysis: {
+              averagePrice,
+              priceRange: { min: minPrice, max: maxPrice },
+              competitivePosition
+            },
+            historicalTrend: {
+              direction,
+              changePercentage: Math.round(changePercentage * 100) / 100,
+              lastUpdated: historicalData[0].createdAt
+            },
+            recommendation
+          });
+        }
+      }
+
+      return intelligence;
+
+    } catch (error) {
+      console.error('Error getting pricing intelligence:', error);
+      throw new Error('Failed to get pricing intelligence');
+    }
+  }
+
+  /**
+   * Calculate margin analysis for the quote
+   */
+  private async calculateMarginAnalysis(items: QuoteItem[], totalValue: number): Promise<QuoteHealth['margin']> {
+    // Get cost information (this would ideally come from inventory/material costs)
+    // For now, we'll estimate based on historical data
+    let estimatedCost = 0;
+    
+    for (const item of items) {
+      // Estimate cost as 65% of selling price (35% margin baseline)
+      const estimatedItemCost = item.totalPrice * 0.65;
+      estimatedCost += estimatedItemCost;
+    }
+
+    const marginPercentage = ((totalValue - estimatedCost) / totalValue) * 100;
+    const target = 30; // Target 30% margin
+
+    let status: 'excellent' | 'good' | 'acceptable' | 'poor';
+    if (marginPercentage >= 40) status = 'excellent';
+    else if (marginPercentage >= 30) status = 'good';
+    else if (marginPercentage >= 20) status = 'acceptable';
+    else status = 'poor';
+
+    return {
+      percentage: Math.round(marginPercentage * 100) / 100,
+      status,
+      target
+    };
+  }
+
+  /**
+   * Analyze pricing competitiveness
+   */
+  private async analyzePricingCompetitiveness(items: QuoteItem[], customerId: string): Promise<QuoteHealth['pricing']> {
+    try {
+      // Get industry average for similar quotes
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { industry: true }
+      });
+
+      let industryAverage = 0;
+      let sampleCount = 0;
+
+      if (customer?.industry) {
+        const industryQuotes = await prisma.quote.findMany({
+          where: {
+            customer: {
+              industry: customer.industry
+            },
+            status: {
+              in: ['APPROVED', 'CONVERTED']
+            },
+            totalValue: {
+              not: null
+            }
+          },
+          select: {
+            totalValue: true,
+            items: true
+          },
+          take: 20
+        });
+
+        // Calculate average price per item in industry
+        industryQuotes.forEach(quote => {
+          if (quote.totalValue && quote.items.length > 0) {
+            industryAverage += quote.totalValue;
+            sampleCount++;
+          }
+        });
+
+        if (sampleCount > 0) {
+          industryAverage = industryAverage / sampleCount;
+        }
+      }
+
+      const totalValue = items.reduce((sum, item) => sum + item.totalPrice, 0);
+      const competitive = sampleCount === 0 || (totalValue >= industryAverage * 0.9 && totalValue <= industryAverage * 1.2);
+
+      let recommendation: 'increase' | 'decrease' | 'maintain' = 'maintain';
+      if (sampleCount > 0) {
+        if (totalValue < industryAverage * 0.8) recommendation = 'increase';
+        else if (totalValue > industryAverage * 1.3) recommendation = 'decrease';
+      }
+
+      return {
+        competitive,
+        industryAverage: Math.round(industryAverage),
+        recommendation
+      };
+
+    } catch (error) {
+      console.error('Error analyzing pricing competitiveness:', error);
+      return {
+        competitive: true,
+        industryAverage: 0,
+        recommendation: 'maintain'
+      };
+    }
+  }
+
+  /**
+   * Check inventory availability for quote items
+   */
+  private async checkInventoryAvailability(items: QuoteItem[]): Promise<QuoteHealth['inventory']> {
+    try {
+      const lowStockItems: string[] = [];
+      const leadTimeWarnings: string[] = [];
+
+      for (const item of items) {
+        // Check inventory levels (assuming we have an inventory table)
+        const inventoryItem = await prisma.inventoryItem.findFirst({
+          where: {
+            OR: [
+              { name: { equals: item.itemName, mode: 'insensitive' } },
+              { materialCode: item.materialCode || undefined }
+            ]
+          }
+        }).catch(() => null); // Handle case where inventory table doesn't exist
+
+        if (inventoryItem) {
+          if (inventoryItem.quantity < item.quantity) {
+            lowStockItems.push(item.itemName);
+          }
+          
+          // Check for lead time warnings (assuming leadTime field exists)
+          if ((inventoryItem as any).leadTime && (inventoryItem as any).leadTime > 14) {
+            leadTimeWarnings.push(`${item.itemName} (${(inventoryItem as any).leadTime} days)`);
+          }
+        }
+      }
+
+      return {
+        allAvailable: lowStockItems.length === 0,
+        lowStockItems,
+        leadTimeWarnings
+      };
+
+    } catch (error) {
+      console.error('Error checking inventory:', error);
+      return {
+        allAvailable: true,
+        lowStockItems: [],
+        leadTimeWarnings: []
+      };
+    }
+  }
+
+  /**
+   * Calculate win probability based on customer history and quote characteristics
+   */
+  private async calculateWinProbability(customerId: string, totalValue: number, items: QuoteItem[]): Promise<QuoteHealth['winProbability']> {
+    try {
+      const factors: string[] = [];
+      let probabilityScore = 50; // Base 50%
+
+      // Analyze customer's conversion history
+      const customerQuotes = await prisma.quote.findMany({
+        where: { customerId },
+        include: { order: true }
+      });
+
+      if (customerQuotes.length > 0) {
+        const conversionRate = (customerQuotes.filter(q => q.order).length / customerQuotes.length) * 100;
+        
+        if (conversionRate >= 70) {
+          probabilityScore += 25;
+          factors.push('High customer conversion rate');
+        } else if (conversionRate >= 40) {
+          probabilityScore += 10;
+          factors.push('Good customer conversion rate');
+        } else if (conversionRate < 20) {
+          probabilityScore -= 15;
+          factors.push('Low customer conversion rate');
+        }
+
+        // Check average order value
+        const customerOrders = customerQuotes.filter(q => q.order && q.totalValue);
+        if (customerOrders.length > 0) {
+          const avgOrderValue = customerOrders.reduce((sum, q) => sum + (q.totalValue || 0), 0) / customerOrders.length;
+          
+          if (totalValue <= avgOrderValue * 1.2) {
+            probabilityScore += 15;
+            factors.push('Quote value within customer norm');
+          } else if (totalValue > avgOrderValue * 2) {
+            probabilityScore -= 10;
+            factors.push('Quote value significantly higher than usual');
+          }
+        }
+      }
+
+      // Check market factors
+      const similarQuotes = await prisma.quote.findMany({
+        where: {
+          totalValue: {
+            gte: totalValue * 0.8,
+            lte: totalValue * 1.2
+          },
+          status: {
+            in: ['APPROVED', 'CONVERTED', 'DECLINED']
+          }
+        },
+        include: { order: true }
+      });
+
+      if (similarQuotes.length > 5) {
+        const marketConversionRate = (similarQuotes.filter(q => q.order).length / similarQuotes.length) * 100;
+        
+        if (marketConversionRate >= 60) {
+          probabilityScore += 10;
+          factors.push('Strong market demand for similar quotes');
+        } else if (marketConversionRate < 30) {
+          probabilityScore -= 10;
+          factors.push('Challenging market for similar quotes');
+        }
+      }
+
+      // Item complexity factor
+      if (items.length <= 5) {
+        probabilityScore += 5;
+        factors.push('Simple quote with few items');
+      } else if (items.length > 15) {
+        probabilityScore -= 5;
+        factors.push('Complex quote with many items');
+      }
+
+      // Ensure probability is within bounds
+      const percentage = Math.max(5, Math.min(95, probabilityScore));
+
+      return {
+        percentage: Math.round(percentage),
+        factors
+      };
+
+    } catch (error) {
+      console.error('Error calculating win probability:', error);
+      return {
+        percentage: 50,
+        factors: ['Unable to calculate - using baseline estimate']
+      };
+    }
+  }
+
+  /**
+   * Calculate overall health score
+   */
+  private calculateOverallScore(
+    margin: QuoteHealth['margin'],
+    pricing: QuoteHealth['pricing'],
+    inventory: QuoteHealth['inventory'],
+    winProbability: QuoteHealth['winProbability']
+  ): number {
+    let score = 0;
+
+    // Margin score (30% weight)
+    let marginScore = 0;
+    switch (margin.status) {
+      case 'excellent': marginScore = 100; break;
+      case 'good': marginScore = 80; break;
+      case 'acceptable': marginScore = 60; break;
+      case 'poor': marginScore = 30; break;
+    }
+    score += marginScore * 0.3;
+
+    // Pricing score (25% weight)
+    const pricingScore = pricing.competitive ? 85 : 50;
+    score += pricingScore * 0.25;
+
+    // Inventory score (20% weight)
+    const inventoryScore = inventory.allAvailable ? 90 : 
+                          (inventory.lowStockItems.length <= 2 ? 70 : 40);
+    score += inventoryScore * 0.2;
+
+    // Win probability score (25% weight)
+    score += winProbability.percentage * 0.25;
+
+    return Math.round(score);
+  }
+
+  /**
+   * Generate pricing recommendation
+   */
+  private generatePricingRecommendation(
+    currentPrice: number,
+    averagePrice: number,
+    trend: 'increasing' | 'stable' | 'decreasing',
+    position: 'below' | 'competitive' | 'above'
+  ): PricingIntelligence['recommendation'] {
+    let suggestedPrice = currentPrice;
+    let reasoning = '';
+    let confidence = 70;
+
+    if (position === 'below' && trend === 'increasing') {
+      suggestedPrice = averagePrice * 0.95;
+      reasoning = 'Market prices trending up, consider increase to market average';
+      confidence = 85;
+    } else if (position === 'above' && trend === 'decreasing') {
+      suggestedPrice = averagePrice * 1.05;
+      reasoning = 'Market prices trending down, consider moderate reduction';
+      confidence = 80;
+    } else if (position === 'below') {
+      suggestedPrice = averagePrice * 0.9;
+      reasoning = 'Current price below market, opportunity to increase';
+      confidence = 75;
+    } else if (position === 'above') {
+      suggestedPrice = averagePrice * 1.1;
+      reasoning = 'Current price above market, may impact competitiveness';
+      confidence = 75;
+    } else {
+      reasoning = 'Current pricing appears competitive';
+      confidence = 80;
+    }
+
+    return {
+      suggestedPrice: Math.round(suggestedPrice * 100) / 100,
+      reasoning,
+      confidence
+    };
+  }
+}
+
+export const quoteIntelligenceService = new QuoteIntelligenceService();

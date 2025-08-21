@@ -1,0 +1,499 @@
+// Customer Intelligence Service
+// Location: bonesbackend/src/services/customerIntelligenceService.ts
+
+import prisma from '../utils/prismaClient';
+
+export interface CustomerSuggestion {
+  itemId: string;
+  itemName: string;
+  description: string;
+  suggestedPrice: number;
+  confidence: number; // 0-100
+  reason: 'frequent_purchase' | 'industry_standard' | 'bundle_complement' | 'seasonal_trend';
+  lastPurchased?: Date;
+  purchaseCount: number;
+}
+
+export interface CustomerIntelligence {
+  customerId: string;
+  customerName: string;
+  industry: string;
+  totalQuotes: number;
+  totalOrders: number;
+  conversionRate: number;
+  averageOrderValue: number;
+  preferredPaymentTerms: string;
+  lastOrderDate?: Date;
+  riskLevel: 'low' | 'medium' | 'high';
+}
+
+export interface BundleRecommendation {
+  bundleId: string;
+  name: string;
+  description: string;
+  items: {
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+  totalPrice: number;
+  savings: number;
+  confidence: number;
+  reason: string;
+}
+
+class CustomerIntelligenceService {
+  /**
+   * Get intelligent suggestions for a customer based on their history
+   */
+  async getCustomerSuggestions(customerId: string, currentItems: string[] = []): Promise<CustomerSuggestion[]> {
+    try {
+      // Get customer's purchase history
+      const customerQuotes = await prisma.quote.findMany({
+        where: {
+          customerId,
+          status: {
+            in: ['APPROVED', 'CONVERTED']
+          }
+        },
+        include: {
+          items: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 50 // Last 50 quotes
+      });
+
+      const suggestions: CustomerSuggestion[] = [];
+
+      // Analyze frequently purchased items
+      const itemFrequency = new Map<string, {
+        count: number;
+        totalPrice: number;
+        avgPrice: number;
+        lastPurchased: Date;
+        descriptions: string[];
+      }>();
+
+      customerQuotes.forEach(quote => {
+        quote.items.forEach(item => {
+          const key = item.itemName.toLowerCase();
+          const existing = itemFrequency.get(key);
+          
+          if (existing) {
+            existing.count++;
+            existing.totalPrice += item.unitPrice;
+            existing.avgPrice = existing.totalPrice / existing.count;
+            if (quote.createdAt > existing.lastPurchased) {
+              existing.lastPurchased = quote.createdAt;
+            }
+            if (!existing.descriptions.includes(item.description || '')) {
+              existing.descriptions.push(item.description || '');
+            }
+          } else {
+            itemFrequency.set(key, {
+              count: 1,
+              totalPrice: item.unitPrice,
+              avgPrice: item.unitPrice,
+              lastPurchased: quote.createdAt,
+              descriptions: [item.description || '']
+            });
+          }
+        });
+      });
+
+      // Convert frequent items to suggestions (excluding current items)
+      for (const [itemName, data] of itemFrequency.entries()) {
+        if (!currentItems.some(current => current.toLowerCase() === itemName.toLowerCase()) && data.count >= 2) {
+          const confidence = Math.min(95, 40 + (data.count * 10)); // Higher confidence for more frequent purchases
+          
+          suggestions.push({
+            itemId: `freq_${itemName.replace(/\s+/g, '_')}`,
+            itemName: itemName,
+            description: data.descriptions[0] || '',
+            suggestedPrice: data.avgPrice,
+            confidence,
+            reason: 'frequent_purchase',
+            lastPurchased: data.lastPurchased,
+            purchaseCount: data.count
+          });
+        }
+      }
+
+      // Get industry-based suggestions
+      const industrySuggestions = await this.getIndustrySuggestions(customerId, currentItems);
+      suggestions.push(...industrySuggestions);
+
+      // Get bundle complement suggestions
+      const bundleSuggestions = await this.getBundleComplements(currentItems);
+      suggestions.push(...bundleSuggestions);
+
+      // Sort by confidence and limit results
+      return suggestions
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 15);
+
+    } catch (error) {
+      console.error('Error getting customer suggestions:', error);
+      throw new Error('Failed to get customer suggestions');
+    }
+  }
+
+  /**
+   * Get bundle recommendations based on items frequently bought together
+   */
+  async getBundleRecommendations(customerId: string, currentItems: string[] = []): Promise<BundleRecommendation[]> {
+    try {
+      // Find quotes where multiple items were purchased together
+      const quotesWithMultipleItems = await prisma.quote.findMany({
+        where: {
+          customerId,
+          status: {
+            in: ['APPROVED', 'CONVERTED']
+          },
+          items: {
+            some: {} // Has at least one item
+          }
+        },
+        include: {
+          items: true
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      // Analyze item combinations
+      const combinations = new Map<string, {
+        items: Array<{ name: string; avgPrice: number; avgQty: number }>;
+        frequency: number;
+        totalValue: number;
+      }>();
+
+      quotesWithMultipleItems.forEach(quote => {
+        if (quote.items.length >= 2) {
+          // Create combinations of items in this quote
+          const items = quote.items.map(item => ({
+            name: item.itemName,
+            price: item.unitPrice,
+            qty: item.quantity
+          }));
+
+          // Sort items to create consistent combination keys
+          const sortedItems = items.sort((a, b) => a.name.localeCompare(b.name));
+          const key = sortedItems.map(item => item.name).join('|');
+
+          const existing = combinations.get(key);
+          if (existing) {
+            existing.frequency++;
+            // Update average prices and quantities
+            existing.items.forEach((bundleItem, index) => {
+              bundleItem.avgPrice = (bundleItem.avgPrice + sortedItems[index].price) / 2;
+              bundleItem.avgQty = (bundleItem.avgQty + sortedItems[index].qty) / 2;
+            });
+          } else {
+            combinations.set(key, {
+              items: sortedItems.map(item => ({
+                name: item.name,
+                avgPrice: item.price,
+                avgQty: item.qty
+              })),
+              frequency: 1,
+              totalValue: sortedItems.reduce((sum, item) => sum + (item.price * item.qty), 0)
+            });
+          }
+        }
+      });
+
+      // Convert to bundle recommendations
+      const recommendations: BundleRecommendation[] = [];
+      let bundleIndex = 0;
+
+      for (const [key, data] of combinations.entries()) {
+        if (data.frequency >= 2) { // Only suggest bundles bought together at least twice
+          const confidence = Math.min(90, 30 + (data.frequency * 15));
+          const savings = data.totalValue * 0.05; // Assume 5% bundle savings
+
+          recommendations.push({
+            bundleId: `bundle_${bundleIndex++}`,
+            name: `${data.items[0].name} Package`,
+            description: `Frequently bought together by this customer`,
+            items: data.items.map(item => ({
+              itemName: item.name,
+              quantity: Math.round(item.avgQty),
+              unitPrice: item.avgPrice
+            })),
+            totalPrice: data.totalValue - savings,
+            savings,
+            confidence,
+            reason: `Purchased together ${data.frequency} times`
+          });
+        }
+      }
+
+      return recommendations
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 5);
+
+    } catch (error) {
+      console.error('Error getting bundle recommendations:', error);
+      throw new Error('Failed to get bundle recommendations');
+    }
+  }
+
+  /**
+   * Get customer intelligence summary
+   */
+  async getCustomerIntelligence(customerId: string): Promise<CustomerIntelligence> {
+    try {
+      // Get customer basic info
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        include: {
+          quotes: {
+            include: {
+              order: true
+            }
+          }
+        }
+      });
+
+      if (!customer) {
+        throw new Error('Customer not found');
+      }
+
+      // Calculate metrics
+      const totalQuotes = customer.quotes.length;
+      const approvedQuotes = customer.quotes.filter(q => ['APPROVED', 'CONVERTED'].includes(q.status));
+      const totalOrders = customer.quotes.filter(q => q.order).length;
+      const conversionRate = totalQuotes > 0 ? (totalOrders / totalQuotes) * 100 : 0;
+
+      // Calculate average order value
+      const orderValues = approvedQuotes.map(q => q.totalValue || 0);
+      const averageOrderValue = orderValues.length > 0 
+        ? orderValues.reduce((sum, val) => sum + val, 0) / orderValues.length 
+        : 0;
+
+      // Determine risk level based on conversion rate and order history
+      let riskLevel: 'low' | 'medium' | 'high' = 'medium';
+      if (conversionRate >= 70 && totalOrders >= 3) {
+        riskLevel = 'low';
+      } else if (conversionRate < 30 || totalQuotes > 5 && totalOrders === 0) {
+        riskLevel = 'high';
+      }
+
+      // Get last order date
+      const lastOrder = customer.quotes
+        .filter(q => q.order)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+      return {
+        customerId: customer.id,
+        customerName: customer.companyName,
+        industry: customer.industry || 'Unknown',
+        totalQuotes,
+        totalOrders,
+        conversionRate: Math.round(conversionRate),
+        averageOrderValue: Math.round(averageOrderValue),
+        preferredPaymentTerms: customer.paymentTerms || 'Net 30',
+        lastOrderDate: lastOrder?.createdAt,
+        riskLevel
+      };
+
+    } catch (error) {
+      console.error('Error getting customer intelligence:', error);
+      throw new Error('Failed to get customer intelligence');
+    }
+  }
+
+  /**
+   * Get industry-based suggestions
+   */
+  private async getIndustrySuggestions(customerId: string, currentItems: string[]): Promise<CustomerSuggestion[]> {
+    try {
+      // Get customer's industry
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        select: { industry: true }
+      });
+
+      if (!customer?.industry) return [];
+
+      // Find other customers in the same industry
+      const industryCustomers = await prisma.customer.findMany({
+        where: {
+          industry: customer.industry,
+          id: { not: customerId }
+        },
+        include: {
+          quotes: {
+            where: {
+              status: {
+                in: ['APPROVED', 'CONVERTED']
+              }
+            },
+            include: {
+              items: true
+            }
+          }
+        },
+        take: 20
+      });
+
+      // Analyze common items in this industry
+      const industryItems = new Map<string, {
+        count: number;
+        totalPrice: number;
+        avgPrice: number;
+        customers: Set<string>;
+      }>();
+
+      industryCustomers.forEach(industryCustomer => {
+        industryCustomer.quotes.forEach(quote => {
+          quote.items.forEach(item => {
+            const key = item.itemName.toLowerCase();
+            const existing = industryItems.get(key);
+            
+            if (existing) {
+              existing.count++;
+              existing.totalPrice += item.unitPrice;
+              existing.avgPrice = existing.totalPrice / existing.count;
+              existing.customers.add(industryCustomer.id);
+            } else {
+              industryItems.set(key, {
+                count: 1,
+                totalPrice: item.unitPrice,
+                avgPrice: item.unitPrice,
+                customers: new Set([industryCustomer.id])
+              });
+            }
+          });
+        });
+      });
+
+      const suggestions: CustomerSuggestion[] = [];
+
+      // Convert to suggestions (only items used by multiple customers)
+      for (const [itemName, data] of industryItems.entries()) {
+        if (data.customers.size >= 2 && 
+            !currentItems.some(current => current.toLowerCase() === itemName.toLowerCase())) {
+          
+          const confidence = Math.min(85, 20 + (data.customers.size * 10));
+          
+          suggestions.push({
+            itemId: `ind_${itemName.replace(/\s+/g, '_')}`,
+            itemName: itemName,
+            description: `Popular in ${customer.industry} industry`,
+            suggestedPrice: data.avgPrice,
+            confidence,
+            reason: 'industry_standard',
+            purchaseCount: data.count
+          });
+        }
+      }
+
+      return suggestions.slice(0, 5); // Limit industry suggestions
+
+    } catch (error) {
+      console.error('Error getting industry suggestions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get bundle complement suggestions based on current items
+   */
+  private async getBundleComplements(currentItems: string[]): Promise<CustomerSuggestion[]> {
+    if (currentItems.length === 0) return [];
+
+    try {
+      // Find quotes that contain any of the current items
+      const relatedQuotes = await prisma.quote.findMany({
+        where: {
+          status: {
+            in: ['APPROVED', 'CONVERTED']
+          },
+          items: {
+            some: {
+              itemName: {
+                in: currentItems,
+                mode: 'insensitive'
+              }
+            }
+          }
+        },
+        include: {
+          items: true
+        }
+      });
+
+      // Find items that are frequently bought with current items
+      const complements = new Map<string, {
+        count: number;
+        totalPrice: number;
+        avgPrice: number;
+        complementTo: string[];
+      }>();
+
+      relatedQuotes.forEach(quote => {
+        const quoteItemNames = quote.items.map(item => item.itemName.toLowerCase());
+        const hasCurrentItem = currentItems.some(current => 
+          quoteItemNames.some(quoteName => quoteName.includes(current.toLowerCase()))
+        );
+
+        if (hasCurrentItem) {
+          quote.items.forEach(item => {
+            const itemKey = item.itemName.toLowerCase();
+            if (!currentItems.some(current => current.toLowerCase() === itemKey)) {
+              const existing = complements.get(itemKey);
+              
+              if (existing) {
+                existing.count++;
+                existing.totalPrice += item.unitPrice;
+                existing.avgPrice = existing.totalPrice / existing.count;
+              } else {
+                complements.set(itemKey, {
+                  count: 1,
+                  totalPrice: item.unitPrice,
+                  avgPrice: item.unitPrice,
+                  complementTo: currentItems.filter(current => 
+                    quoteItemNames.some(quoteName => quoteName.includes(current.toLowerCase()))
+                  )
+                });
+              }
+            }
+          });
+        }
+      });
+
+      const suggestions: CustomerSuggestion[] = [];
+
+      for (const [itemName, data] of complements.entries()) {
+        if (data.count >= 2) { // Must appear with current items at least twice
+          const confidence = Math.min(80, 25 + (data.count * 8));
+          
+          suggestions.push({
+            itemId: `comp_${itemName.replace(/\s+/g, '_')}`,
+            itemName: itemName,
+            description: `Often bought with ${data.complementTo.join(', ')}`,
+            suggestedPrice: data.avgPrice,
+            confidence,
+            reason: 'bundle_complement',
+            purchaseCount: data.count
+          });
+        }
+      }
+
+      return suggestions
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 5);
+
+    } catch (error) {
+      console.error('Error getting bundle complements:', error);
+      return [];
+    }
+  }
+}
+
+export const customerIntelligenceService = new CustomerIntelligenceService();
