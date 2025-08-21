@@ -113,7 +113,40 @@ export class SmartQuoteService {
       return [];
     }
   }
+private getFrequentItemsFromLineItems(lineItems: any[]): any[] {
+  const itemMap = new Map<string, { material: any, count: number, totalQuantity: number }>();
+  
+  lineItems.forEach(item => {
+    if (item.material) {
+      const key = item.material.id;
+      const existing = itemMap.get(key);
+      if (existing) {
+        existing.count += 1;
+        existing.totalQuantity += item.quantity;
+      } else {
+        itemMap.set(key, {
+          material: item.material,
+          count: 1,
+          totalQuantity: item.quantity
+        });
+      }
+    }
+  });
 
+  return Array.from(itemMap.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
+    .map(({ material, count, totalQuantity }) => ({
+      id: material.id,
+      name: material.name,
+      description: material.description,
+      unitPrice: material.unitPrice,
+      category: material.category,
+      orderCount: count,
+      totalQuantity,
+      confidence: Math.min(count * 20, 100)
+    }));
+}
   async getCustomerIntelligence(customerId: string): Promise<CustomerIntelligence> {
     try {
       const customer = await prisma.customer.findUnique({
@@ -155,7 +188,7 @@ export class SmartQuoteService {
         totalQuotes: quotes.length,
         totalValue,
         lastQuoteDate: quotes.length > 0 ? quotes[0].createdAt : undefined,
-        commonItems: [], // Could be populated with frequent items
+        commonItems: this.getFrequentItemsFromLineItems(allItems),
         averageOrderValue,
         preferredCategories
       };
