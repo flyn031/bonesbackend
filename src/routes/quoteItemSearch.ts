@@ -1,32 +1,16 @@
-import { Router } from 'express';
-import { authenticateToken as authMiddleware } from '../middleware/authMiddleware';
-import { quoteItemSearchController } from '../controllers/quoteItemSearchController';
+import express from 'express';
+import { QuoteItemSearchController } from '../controllers/quoteItemSearchController';
+import { authenticateToken } from '../middleware/authMiddleware';
 
-const router = Router();
-router.use(authMiddleware);
+const router = express.Router();
 
-router.get('/search', async (req, res) => {
-  await quoteItemSearchController.searchQuoteItems(req, res);
-});
+// Apply authentication middleware to all routes
+router.use(authenticateToken);
 
-router.get('/quote/:quoteId', async (req, res) => {
-  await quoteItemSearchController.getQuoteItems(req, res);
-});
+// Search quote items across all company quotes
+router.post('/search', QuoteItemSearchController.searchQuoteItems);
 
-router.get('/frequent', async (req, res) => {
-  await quoteItemSearchController.getFrequentItems(req, res);
-});
-
-router.get('/similar', async (req, res) => {
-  await quoteItemSearchController.getSimilarItems(req, res);
-});
-
-router.get('/suggestions', async (req, res) => {
-  await quoteItemSearchController.getSearchSuggestions(req, res);
-});
-
-router.get('/filters', async (req, res) => {
-  await quoteItemSearchController.getFilterOptions(req, res);
-});
+// Get frequently used items
+router.post('/frequent', QuoteItemSearchController.getFrequentItems);
 
 export default router;
