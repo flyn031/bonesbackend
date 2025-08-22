@@ -51,12 +51,11 @@ class CustomerIntelligenceController {
     try {
       const { customerId } = req.params;
       
-      // For now, return empty array - bundle logic can be implemented later
-      // Could analyze frequently bought together items from customer's quote history
+      const bundles = await smartQuoteService.getBundleRecommendations(customerId);
+      
       res.json({ 
         success: true, 
-        data: [],
-        message: 'Bundle recommendations feature coming soon'
+        data: bundles
       });
     } catch (error) {
       console.error('Error getting bundle recommendations:', error);
@@ -69,10 +68,11 @@ class CustomerIntelligenceController {
 
   async getDynamicBundles(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { existingItems, customerId } = req.body;
+      // Handle both GET (query params) and POST (body) requests
+      const customerId = req.query.customerId || req.body.customerId;
+      const existingItems = req.query.existingItems || req.body.existingItems || [];
       
-      // Could implement logic to suggest complementary items based on existing items
-      // For now, return empty array
+      // For now, return empty array - could implement logic later
       res.json({ 
         success: true, 
         data: [],
@@ -91,34 +91,65 @@ class CustomerIntelligenceController {
     try {
       const industryType = req.query.industry as string;
       
-      // Basic templates - could be expanded to database-stored templates
+      // Conveyor-specific templates for customer's business
       const templates = [
         {
-          id: 'office_basic',
-          name: 'Basic Office Setup',
-          description: 'Essential items for a small office',
-          category: 'Office',
-          estimatedValue: 1500,
-          industryType: 'Office',
-          items: []
-        },
-        {
-          id: 'warehouse_starter',
-          name: 'Warehouse Starter Kit', 
-          description: 'Basic warehouse equipment and supplies',
-          category: 'Warehouse',
-          estimatedValue: 5000,
-          industryType: 'Logistics',
-          items: []
-        },
-        {
-          id: 'safety_basic',
-          name: 'Safety Equipment Package',
-          description: 'Essential safety equipment for manufacturing',
-          category: 'Safety',
-          estimatedValue: 2500,
+          id: 'basic_conveyor_system',
+          name: 'Basic Conveyor System',
+          description: 'Standard conveyor setup with motor, belt, and control panel',
+          category: 'Conveyor Systems',
+          estimatedValue: 2080,
           industryType: 'Manufacturing',
-          items: []
+          items: [
+            { materialCode: 'SP003', quantity: 1, description: 'Standard 0.75kW 3-Phase Motor' },
+            { materialCode: 'BC001', quantity: 1, description: 'Light Duty Flat Belt Conveyor' },
+            { materialCode: 'EP001', quantity: 1, description: 'Electrical Control Panel' },
+            { materialCode: 'RM001', quantity: 5, description: 'Rubber Conveyor Matting' }
+          ]
+        },
+        {
+          id: 'heavy_duty_material_handling',
+          name: 'Heavy Duty Material Handling',
+          description: 'Robust conveyor solution for heavy materials with safety systems',
+          category: 'Material Handling',
+          estimatedValue: 2890,
+          industryType: 'Warehouse',
+          items: [
+            { materialCode: 'RC002', quantity: 2, description: 'Heavy Duty Roller Conveyor' },
+            { materialCode: 'SP003', quantity: 2, description: 'Standard 0.75kW 3-Phase Motor' },
+            { materialCode: 'SB001', quantity: 3, description: 'Safety Barrier System' },
+            { materialCode: 'RM001', quantity: 10, description: 'Rubber Conveyor Matting' }
+          ]
+        },
+        {
+          id: 'conveyor_safety_package',
+          name: 'Conveyor Safety & Control Package',
+          description: 'Essential safety and control systems for conveyor installations',
+          category: 'Safety & Controls',
+          estimatedValue: 1810,
+          industryType: 'Manufacturing',
+          items: [
+            { materialCode: 'EP001', quantity: 1, description: 'Electrical Control Panel' },
+            { materialCode: 'SB001', quantity: 4, description: 'Safety Barrier System' },
+            { materialCode: 'SP003', quantity: 1, description: 'Standard 0.75kW 3-Phase Motor' },
+            { materialCode: 'RM001', quantity: 15, description: 'Rubber Conveyor Matting' }
+          ]
+        },
+        {
+          id: 'complete_conveyor_line',
+          name: 'Complete Conveyor Production Line',
+          description: 'Full conveyor system with multiple sections and comprehensive controls',
+          category: 'Production Line',
+          estimatedValue: 4235,
+          industryType: 'Manufacturing',
+          items: [
+            { materialCode: 'BC001', quantity: 2, description: 'Light Duty Flat Belt Conveyor' },
+            { materialCode: 'RC002', quantity: 1, description: 'Heavy Duty Roller Conveyor' },
+            { materialCode: 'SP003', quantity: 3, description: 'Standard 0.75kW 3-Phase Motor' },
+            { materialCode: 'EP001', quantity: 2, description: 'Electrical Control Panel' },
+            { materialCode: 'SB001', quantity: 2, description: 'Safety Barrier System' },
+            { materialCode: 'RM001', quantity: 20, description: 'Rubber Conveyor Matting' }
+          ]
         }
       ];
 

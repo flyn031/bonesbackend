@@ -113,40 +113,42 @@ export class SmartQuoteService {
       return [];
     }
   }
-private getFrequentItemsFromLineItems(lineItems: any[]): any[] {
-  const itemMap = new Map<string, { material: any, count: number, totalQuantity: number }>();
-  
-  lineItems.forEach(item => {
-    if (item.material) {
-      const key = item.material.id;
-      const existing = itemMap.get(key);
-      if (existing) {
-        existing.count += 1;
-        existing.totalQuantity += item.quantity;
-      } else {
-        itemMap.set(key, {
-          material: item.material,
-          count: 1,
-          totalQuantity: item.quantity
-        });
-      }
-    }
-  });
 
-  return Array.from(itemMap.values())
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10)
-    .map(({ material, count, totalQuantity }) => ({
-      id: material.id,
-      name: material.name,
-      description: material.description,
-      unitPrice: material.unitPrice,
-      category: material.category,
-      orderCount: count,
-      totalQuantity,
-      confidence: Math.min(count * 20, 100)
-    }));
-}
+  private getFrequentItemsFromLineItems(lineItems: any[]): any[] {
+    const itemMap = new Map<string, { material: any, count: number, totalQuantity: number }>();
+    
+    lineItems.forEach(item => {
+      if (item.material) {
+        const key = item.material.id;
+        const existing = itemMap.get(key);
+        if (existing) {
+          existing.count += 1;
+          existing.totalQuantity += item.quantity;
+        } else {
+          itemMap.set(key, {
+            material: item.material,
+            count: 1,
+            totalQuantity: item.quantity
+          });
+        }
+      }
+    });
+
+    return Array.from(itemMap.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map(({ material, count, totalQuantity }) => ({
+        id: material.id,
+        name: material.name,
+        description: material.description,
+        unitPrice: material.unitPrice,
+        category: material.category,
+        orderCount: count,
+        totalQuantity,
+        confidence: Math.min(count * 20, 100)
+      }));
+  }
+
   async getCustomerIntelligence(customerId: string): Promise<CustomerIntelligence> {
     try {
       const customer = await prisma.customer.findUnique({
@@ -159,7 +161,18 @@ private getFrequentItemsFromLineItems(lineItems: any[]): any[] {
       });
 
       if (!customer) {
-        throw new Error('Customer not found');
+        // Return default data for non-existent customers
+        return {
+          customerId: customerId,
+          customerName: 'Unknown Customer',
+          industry: 'manufacturing',
+          totalQuotes: 0,
+          totalValue: 0,
+          lastQuoteDate: undefined,
+          commonItems: [],
+          averageOrderValue: 0,
+          preferredCategories: []
+        };
       }
 
       const quotes = customer.quotes;
@@ -244,6 +257,108 @@ private getFrequentItemsFromLineItems(lineItems: any[]): any[] {
     } catch (error) {
       console.error('Error analyzing quote health:', error);
       throw error;
+    }
+  }
+
+  async getBundleRecommendations(customerId: string): Promise<any[]> {
+    try {
+      // Get customer's purchase history
+      const customer = await prisma.customer.findUnique({
+        where: { id: customerId },
+        include: {
+          quotes: {
+            include: { lineItems: { include: { material: true } } }
+          }
+        }
+      });
+
+      if (!customer) {
+        // Return empty array for non-existent customers instead of failing
+        console.log(`Bundle recommendations requested for non-existent customer: ${customerId}`);
+        return [];
+      }
+
+      if (customer.quotes.length === 0) {
+        // Return empty array for customers with no quote history
+        console.log(`No quote history found for customer: ${customerId}`);
+        return [];
+      }
+
+      // Analyze frequently bought together items
+      const itemCombinations = new Map<string, { items: any[], count: number }>();
+
+      // Find common combinations
+      customer.quotes.forEach(quote => {
+        // Filter items that have materials with categories
+        const quoteItems = quote.lineItems.filter(item => 
+          item.material && 
+          item.material.category && 
+          item.material.category.trim() !== ''
+        );
+        
+        // Create bundles of 2-3 items frequently bought together
+        for (let i = 0; i < quoteItems.length; i++) {
+          for (let j = i + 1; j < quoteItems.length; j++) {
+            const material1 = quoteItems[i].material;
+            const material2 = quoteItems[j].material;
+            
+            if (!material1?.category || !material2?.category) continue;
+            
+            const category1 = material1.category;
+            const category2 = material2.category;
+            
+            // Skip if same category (we want complementary items)
+            if (category1 === category2) continue;
+            
+            const key = [category1, category2].sort().join('-');
+            
+            if (itemCombinations.has(key)) {
+              itemCombinations.get(key)!.count++;
+            } else {
+              itemCombinations.set(key, {
+                items: [material1, material2],
+                count: 1
+              });
+            }
+          }
+        }
+      });
+
+      // Return top bundles
+      return Array.from(itemCombinations.entries())
+        .sort(([,a], [,b]) => b.count - a.count)
+        .slice(0, 5)
+        .map(([key, data]) => {
+          // Calculate total price from bundle items
+          const totalPrice = data.items.reduce((sum, item) => sum + (item.unitPrice || 0), 0);
+          
+          // Calculate savings (assume 5% bundle discount)
+          const savings = totalPrice * 0.05;
+          
+          return {
+            id: `bundle_${key}`,
+            name: `${data.items[0].category} + ${data.items[1].category} Bundle`,
+            description: `Commonly purchased together (${data.count} times)`,
+            items: data.items.map(item => ({
+              id: item.id,
+              name: item.name,
+              description: item.description || '',
+              unitPrice: item.unitPrice || 0,
+              category: item.category,
+              code: item.code
+            })),
+            totalPrice: Math.round(totalPrice * 100) / 100,
+            savings: Math.round(savings * 100) / 100,
+            frequency: data.count,
+            confidence: Math.min(data.count * 20, 95), // Scale confidence better
+            bundleType: 'frequently_bought_together',
+            category: `${data.items[0].category} & ${data.items[1].category}`
+          };
+        });
+
+    } catch (error) {
+      console.error('Error getting bundle recommendations:', error);
+      return [];
     }
   }
 
