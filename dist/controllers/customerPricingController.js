@@ -24,27 +24,60 @@ class CustomerPricingController {
                     });
                     return;
                 }
-                // Look for customer-specific pricing
-                const customerPricing = yield prisma.customerPricing.findFirst({
+                // Look for historical pricing from previous quotes
+                const quoteLineItems = yield prisma.quoteLineItem.findMany({
                     where: {
-                        customerId: customerId,
-                        materialId: materialId
-                    }
+                        materialId: materialId,
+                        quote: {
+                            customerId: customerId,
+                            status: { not: 'DRAFT' } // Only consider non-draft quotes
+                        }
+                    },
+                    include: {
+                        quote: {
+                            select: {
+                                id: true,
+                                quoteNumber: true,
+                                createdAt: true,
+                                status: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        createdAt: 'desc'
+                    },
+                    take: 10 // Get last 10 instances
                 });
-                if (customerPricing) {
+                if (quoteLineItems.length > 0) {
+                    // Calculate pricing statistics from historical data
+                    const prices = quoteLineItems.map(item => item.unitPrice);
+                    const latestPrice = prices[0];
+                    const averagePrice = prices.reduce((sum, price) => sum + price, 0) / prices.length;
+                    const minPrice = Math.min(...prices);
+                    const maxPrice = Math.max(...prices);
                     res.json({
                         success: true,
                         data: {
-                            materialId: customerPricing.materialId,
-                            customerId: customerPricing.customerId,
-                            unitPrice: customerPricing.unitPrice,
-                            lastUpdated: customerPricing.updatedAt,
-                            hasCustomPricing: true
+                            materialId: materialId,
+                            customerId: customerId,
+                            unitPrice: latestPrice, // Use most recent price
+                            averagePrice,
+                            minPrice,
+                            maxPrice,
+                            lastUpdated: quoteLineItems[0].createdAt,
+                            hasCustomPricing: true,
+                            historicalQuotes: quoteLineItems.length,
+                            lastQuoteNumber: quoteLineItems[0].quote.quoteNumber,
+                            priceHistory: quoteLineItems.map(item => ({
+                                price: item.unitPrice,
+                                date: item.createdAt,
+                                quoteNumber: item.quote.quoteNumber
+                            }))
                         }
                     });
                 }
                 else {
-                    // No custom pricing found - return material's default price
+                    // No historical pricing found - return material's default price
                     const material = yield prisma.material.findUnique({
                         where: { id: materialId }
                     });
@@ -56,7 +89,8 @@ class CustomerPricingController {
                                 customerId: customerId,
                                 unitPrice: material.unitPrice,
                                 lastUpdated: material.updatedAt,
-                                hasCustomPricing: false
+                                hasCustomPricing: false,
+                                historicalQuotes: 0
                             }
                         });
                     }
@@ -81,9 +115,14 @@ class CustomerPricingController {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const { customerId } = req.params;
-                // Get all pricing records for this customer
-                const pricingHistory = yield prisma.customerPricing.findMany({
-                    where: { customerId },
+                // Get all materials this customer has been quoted for
+                const quoteLineItems = yield prisma.quoteLineItem.findMany({
+                    where: {
+                        quote: {
+                            customerId,
+                            status: { not: 'DRAFT' }
+                        }
+                    },
                     include: {
                         material: {
                             select: {
@@ -93,19 +132,41 @@ class CustomerPricingController {
                                 description: true,
                                 unit: true
                             }
+                        },
+                        quote: {
+                            select: {
+                                quoteNumber: true,
+                                createdAt: true,
+                                status: true
+                            }
                         }
                     },
-                    orderBy: { updatedAt: 'desc' }
+                    orderBy: { createdAt: 'desc' }
                 });
+                // Group by material and get latest pricing for each
+                const materialPricingMap = new Map();
+                quoteLineItems.forEach(item => {
+                    if (item.material) {
+                        const materialId = item.material.id;
+                        if (!materialPricingMap.has(materialId)) {
+                            materialPricingMap.set(materialId, {
+                                material: item.material,
+                                unitPrice: item.unitPrice,
+                                lastUpdated: item.createdAt,
+                                lastQuoteNumber: item.quote.quoteNumber,
+                                quoteCount: 1
+                            });
+                        }
+                        else {
+                            // Update quote count
+                            materialPricingMap.get(materialId).quoteCount++;
+                        }
+                    }
+                });
+                const pricingHistory = Array.from(materialPricingMap.values());
                 res.json({
                     success: true,
-                    data: pricingHistory.map(pricing => ({
-                        materialId: pricing.materialId,
-                        material: pricing.material,
-                        unitPrice: pricing.unitPrice,
-                        lastUpdated: pricing.updatedAt,
-                        notes: pricing.notes || null
-                    }))
+                    data: pricingHistory
                 });
             }
             catch (error) {
@@ -117,98 +178,21 @@ class CustomerPricingController {
             }
         });
     }
+    // Simplified method - just returns analysis since we don't have a dedicated pricing table
     updateCustomerPricing(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { customerId, materialId } = req.params;
-                const { unitPrice, notes } = req.body;
-                if (!unitPrice || unitPrice <= 0) {
-                    res.status(400).json({
-                        error: 'Invalid unit price',
-                        details: 'Unit price must be a positive number'
-                    });
-                    return;
-                }
-                const customerPricing = yield prisma.customerPricing.upsert({
-                    where: {
-                        customerId_materialId: {
-                            customerId,
-                            materialId
-                        }
-                    },
-                    update: {
-                        unitPrice,
-                        notes,
-                        updatedAt: new Date()
-                    },
-                    create: {
-                        customerId,
-                        materialId,
-                        unitPrice,
-                        notes
-                    },
-                    include: {
-                        material: {
-                            select: {
-                                code: true,
-                                name: true
-                            }
-                        }
-                    }
-                });
-                res.json({
-                    success: true,
-                    data: {
-                        materialId: customerPricing.materialId,
-                        customerId: customerPricing.customerId,
-                        unitPrice: customerPricing.unitPrice,
-                        notes: customerPricing.notes,
-                        material: customerPricing.material,
-                        updatedAt: customerPricing.updatedAt
-                    }
-                });
-            }
-            catch (error) {
-                console.error('Error updating customer pricing:', error);
-                res.status(500).json({
-                    error: 'Failed to update customer pricing',
-                    details: error instanceof Error ? error.message : 'Unknown error'
-                });
-            }
+            res.status(501).json({
+                error: 'Not implemented',
+                message: 'Customer pricing is based on quote history. Create new quotes to establish pricing patterns.'
+            });
         });
     }
     deleteCustomerPricing(req, res) {
         return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const { customerId, materialId } = req.params;
-                yield prisma.customerPricing.delete({
-                    where: {
-                        customerId_materialId: {
-                            customerId,
-                            materialId
-                        }
-                    }
-                });
-                res.json({
-                    success: true,
-                    message: 'Customer pricing deleted successfully'
-                });
-            }
-            catch (error) {
-                console.error('Error deleting customer pricing:', error);
-                if (error instanceof Error && 'code' in error && error.code === 'P2025') {
-                    res.status(404).json({
-                        error: 'Customer pricing not found',
-                        details: 'No custom pricing found for this customer and material combination'
-                    });
-                }
-                else {
-                    res.status(500).json({
-                        error: 'Failed to delete customer pricing',
-                        details: error instanceof Error ? error.message : 'Unknown error'
-                    });
-                }
-            }
+            res.status(501).json({
+                error: 'Not implemented',
+                message: 'Customer pricing is based on quote history. Cannot delete historical quote data.'
+            });
         });
     }
 }
