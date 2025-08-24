@@ -48,6 +48,7 @@ app.use((req, res, next) => {
 });
 const allowedOrigins = [
     'http://localhost:5173',
+    'https://bones-frontend-exee.vercel.app',
     'https://bones-frontend-9u58.vercel.app',
     'https://bones-frontend-9u58-o1l0858u1-james-oflynn-s-projects.vercel.app',
     'https://bones-frontend-9u58-git-main-james-oflynn-s-projects.vercel.app'
