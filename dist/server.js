@@ -35,6 +35,7 @@ const timeEntries_1 = __importDefault(require("./routes/timeEntries"));
 // Smart Quote Builder imports
 const quoteItemSearch_1 = __importDefault(require("./routes/quoteItemSearch"));
 const customerIntelligence_1 = __importDefault(require("./routes/customerIntelligence"));
+const customerPricing_1 = __importDefault(require("./routes/customerPricing"));
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 exports.app = app;
@@ -140,6 +141,8 @@ console.log('🔧 [SERVER] Registering quote item search routes...');
 app.use('/api/quote-items', quoteItemSearch_1.default);
 console.log('🔧 [SERVER] Registering customer intelligence routes...');
 app.use('/api/customer-intelligence', customerIntelligence_1.default);
+console.log('🔧 [SERVER] Registering customer pricing routes...');
+app.use('/api/customer-pricing', customerPricing_1.default);
 console.log('🚀 [SERVER] Smart Quote Builder routes ready!');
 app.get('/health', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {

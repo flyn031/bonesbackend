@@ -21,6 +21,7 @@ import timeEntryRoutes from './routes/timeEntries';
 // Smart Quote Builder imports
 import quoteItemSearchRoutes from './routes/quoteItemSearch';
 import customerIntelligenceRoutes from './routes/customerIntelligence';
+import customerPricingRoutes from './routes/customerPricing';
 
 dotenv.config();
 const app = express();
@@ -135,6 +136,8 @@ console.log('🔧 [SERVER] Registering quote item search routes...');
 app.use('/api/quote-items', quoteItemSearchRoutes);
 console.log('🔧 [SERVER] Registering customer intelligence routes...');
 app.use('/api/customer-intelligence', customerIntelligenceRoutes);
+console.log('🔧 [SERVER] Registering customer pricing routes...');
+app.use('/api/customer-pricing', customerPricingRoutes);
 console.log('🚀 [SERVER] Smart Quote Builder routes ready!');
 
 app.get('/health', async (req, res) => {
