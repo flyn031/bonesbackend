@@ -327,6 +327,13 @@ model CompanySettings {
   lastQuoteNumber       Int      @default(0)
   quoteNumberFormat     String   @default("{PREFIX}-{NUMBER}")
   quoteNumberPrefix     String   @default("Q")
+  
+  // ADD THESE NEW FIELDS:
+  standardWarranty         String?
+  standardDeliveryTerms    String? 
+  defaultLeadTimeWeeks     Int?
+  standardExclusions       String?
+  useCompanyDetailsOnQuotes Boolean? @default(false)
 }
 
 model Quote {
