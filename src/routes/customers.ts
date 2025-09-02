@@ -1,6 +1,7 @@
 // src/routes/customers.ts
 import { Router, Response, NextFunction } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware'; // Changed import to middleware file
+import multer from 'multer';
 
 // Import controller functions
 import {
@@ -10,6 +11,7 @@ import {
     updateCustomer,
     deleteCustomer,
     getCustomerOrders,
+    importCustomers
 } from '../controllers/customerController';
 
 // TEMPORARILY use direct imports instead of contactRoutes
@@ -23,9 +25,13 @@ import {
 import { authenticateToken } from '../middleware/authMiddleware';
 
 const router = Router();
+const upload = multer({ dest: 'uploads/' });
 
 // Apply authentication middleware to all customer routes
 router.use(authenticateToken);
+
+// --- Customer Import Route ---
+router.post('/import', upload.single('customers'), importCustomers);
 
 // --- Standard Customer Routes ---
 router.route('/')
