@@ -7,6 +7,7 @@ interface QuoteInputData {
   customerId: string;
   title: string;
   description?: string;
+  termsAndConditions?: string;
   notes?: string;   
   totalAmount?: number; // Frontend might send number, backend should handle as Decimal
   validUntil?: Date;
@@ -119,6 +120,8 @@ export const calculateQuoteTotals = (items: Array<{ quantity?: number; unitPrice
 
 // --- Service Functions ---
 export const createQuoteV1 = async (data: QuoteInputData) => {
+  console.log('🔥 CREATEQUOTEV1 CALLED WITH TERMS:', data.termsAndConditions);
+  console.log('[QuoteService][createQuoteV1] Received raw payload:', JSON.stringify(data, null, 2));
   console.log('[QuoteService][createQuoteV1] Received raw payload:', JSON.stringify(data, null, 2));
   const quoteReference = await generateQuoteReference();
   const versionNumber = 1;
@@ -161,6 +164,7 @@ export const createQuoteV1 = async (data: QuoteInputData) => {
         contactEmail: data.contactEmail,
         contactPerson: data.contactPerson,
         contactPhone: data.contactPhone,
+        termsAndConditions: data.termsAndConditions,
         totalAmount: finalTotal, // Use number instead of Decimal
         quoteReference: quoteReference,
         versionNumber: versionNumber,
@@ -315,6 +319,7 @@ export const cloneQuote = async (sourceQuoteId: string, userId: string, targetCu
     customerId: targetCustomerId || sourceQuote.customerId,
     title: newTitle || `${sourceQuote.title} (Clone)`,
     description: sourceQuote.description || undefined,
+    termsAndConditions: sourceQuote.termsAndConditions || undefined,
     validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Default 30 days validity
     createdById: userId,
     customerReference: sourceQuote.customerReference || undefined,

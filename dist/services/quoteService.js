@@ -104,6 +104,8 @@ const calculateQuoteTotals = (items) => {
 exports.calculateQuoteTotals = calculateQuoteTotals;
 // --- Service Functions ---
 const createQuoteV1 = (data) => __awaiter(void 0, void 0, void 0, function* () {
+    console.log('🔥 CREATEQUOTEV1 CALLED WITH TERMS:', data.termsAndConditions);
+    console.log('[QuoteService][createQuoteV1] Received raw payload:', JSON.stringify(data, null, 2));
     console.log('[QuoteService][createQuoteV1] Received raw payload:', JSON.stringify(data, null, 2));
     const quoteReference = yield generateQuoteReference();
     const versionNumber = 1;
@@ -140,6 +142,7 @@ const createQuoteV1 = (data) => __awaiter(void 0, void 0, void 0, function* () {
                 contactEmail: data.contactEmail,
                 contactPerson: data.contactPerson,
                 contactPhone: data.contactPhone,
+                termsAndConditions: data.termsAndConditions,
                 totalAmount: finalTotal, // Use number instead of Decimal
                 quoteReference: quoteReference,
                 versionNumber: versionNumber,
@@ -289,6 +292,7 @@ const cloneQuote = (sourceQuoteId, userId, targetCustomerId, newTitle) => __awai
         customerId: targetCustomerId || sourceQuote.customerId,
         title: newTitle || `${sourceQuote.title} (Clone)`,
         description: sourceQuote.description || undefined,
+        termsAndConditions: sourceQuote.termsAndConditions || undefined,
         validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Default 30 days validity
         createdById: userId,
         customerReference: sourceQuote.customerReference || undefined,

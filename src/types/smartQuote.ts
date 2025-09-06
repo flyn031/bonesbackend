@@ -4,7 +4,7 @@ export interface SmartQuoteItem {
   quantity: number;
   unitPrice: number;
   materialId?: string;
-  source?: 'previous_quote' | 'customer_history' | 'template' | 'bundle';
+  source?: 'previous_quote' | 'customer_history' | 'template' | 'bundle' | 'manual';
   sourceQuoteId?: string;
   sourceQuoteNumber?: string;
   confidence?: number;

@@ -12,6 +12,7 @@ interface QuoteCreateData {
   customerId: string;
   title: string;
   description?: string;
+  termsAndConditions?: string;
   lineItems: {
     description: string;
     quantity: number;
@@ -91,10 +92,14 @@ export const createQuote = async (req: AuthRequest, res: Response, next: NextFun
             contactEmail, 
             contactPerson, 
             contactPhone, 
+            termsAndConditions, 
             quoteNumberPrefix, 
             lastQuoteNumber, 
             ...otherData 
         } = req.body;
+        console.log('🔍 FULL REQUEST BODY:', JSON.stringify(req.body, null, 2));
+        console.log('🔍 EXTRACTED termsAndConditions:', termsAndConditions);
+        console.log('🔍 ALL FIELD NAMES IN BODY:', Object.keys(req.body));
         
         const itemsToProcess = items || lineItems || [];
         if (!customerId || !title || !Array.isArray(itemsToProcess) || itemsToProcess.length === 0) {
@@ -122,6 +127,7 @@ export const createQuote = async (req: AuthRequest, res: Response, next: NextFun
             customerId,
             title,
             description: otherData.description,
+            termsAndConditions, 
             lineItems: itemsToProcess.map((item: any) => ({
                 description: item.description || '',
                 quantity: parseFloat(item.quantity?.toString() || '1') || 1,
@@ -140,6 +146,8 @@ export const createQuote = async (req: AuthRequest, res: Response, next: NextFun
             quoteNumberPrefix,
             lastQuoteNumber
         };
+        console.log('🎯 CONTROLLER SENDING TO SERVICE:', JSON.stringify(quoteData, null, 2));
+        console.log('🎯 TERMS IN CONTROLLER:', termsAndConditions);
         const newQuote = await quoteService.createQuoteV1(quoteData);
         res.status(201).json(newQuote);
     } catch (error) {

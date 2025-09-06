@@ -342,6 +342,7 @@ model Quote {
   title             String
   description       String?
   notes             String?         // Add this line
+  termsAndConditions String?  
   status            QuoteStatus     @default(DRAFT)
   totalAmount       Float           @default(0)
   validUntil        DateTime?

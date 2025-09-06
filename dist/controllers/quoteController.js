@@ -113,7 +113,10 @@ const createQuote = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
             res.status(401).json({ message: 'User not authenticated' });
             return;
         }
-        const _b = req.body, { customerId, title, lineItems, items, validUntil, status, customerReference, contactEmail, contactPerson, contactPhone, quoteNumberPrefix, lastQuoteNumber } = _b, otherData = __rest(_b, ["customerId", "title", "lineItems", "items", "validUntil", "status", "customerReference", "contactEmail", "contactPerson", "contactPhone", "quoteNumberPrefix", "lastQuoteNumber"]);
+        const _b = req.body, { customerId, title, lineItems, items, validUntil, status, customerReference, contactEmail, contactPerson, contactPhone, termsAndConditions, quoteNumberPrefix, lastQuoteNumber } = _b, otherData = __rest(_b, ["customerId", "title", "lineItems", "items", "validUntil", "status", "customerReference", "contactEmail", "contactPerson", "contactPhone", "termsAndConditions", "quoteNumberPrefix", "lastQuoteNumber"]);
+        console.log('🔍 FULL REQUEST BODY:', JSON.stringify(req.body, null, 2));
+        console.log('🔍 EXTRACTED termsAndConditions:', termsAndConditions);
+        console.log('🔍 ALL FIELD NAMES IN BODY:', Object.keys(req.body));
         const itemsToProcess = items || lineItems || [];
         if (!customerId || !title || !Array.isArray(itemsToProcess) || itemsToProcess.length === 0) {
             res.status(400).json({ message: 'Missing required fields: customerId, title, and at least one line item.' });
@@ -139,6 +142,7 @@ const createQuote = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
             customerId,
             title,
             description: otherData.description,
+            termsAndConditions,
             lineItems: itemsToProcess.map((item) => {
                 var _a, _b;
                 return ({
@@ -160,6 +164,8 @@ const createQuote = (req, res, next) => __awaiter(void 0, void 0, void 0, functi
             quoteNumberPrefix,
             lastQuoteNumber
         };
+        console.log('🎯 CONTROLLER SENDING TO SERVICE:', JSON.stringify(quoteData, null, 2));
+        console.log('🎯 TERMS IN CONTROLLER:', termsAndConditions);
         const newQuote = yield quoteService.createQuoteV1(quoteData);
         res.status(201).json(newQuote);
     }
