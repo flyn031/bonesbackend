@@ -310,4 +310,4 @@ router.post('/:id/convert-to-order', auditQuoteMiddleware('CONVERTED_TO_ORDER'),
 
 console.log('🎯 [QUOTES] Router setup complete - exporting router');
 
-export default router;
+export default router;// Production rebuild Fri Sep 26 20:07:54 BST 2025
