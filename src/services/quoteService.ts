@@ -232,6 +232,7 @@ export const createNewQuoteVersion = async (data: QuoteVersionInputData) => {
         quoteReference: parentQuote.quoteReference,
         title: newData.title,
         description: newData.description,
+        termsAndConditions: newData.termsAndConditions, // FIXED: Added termsAndConditions
         status: newData.status || parentQuote.status,
         validUntil: newData.validUntil,
         createdById: newData.createdById,
@@ -422,6 +423,7 @@ export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInput
      if (data.title !== undefined) dataToUpdate.title = data.title;
      if (data.description !== undefined) dataToUpdate.description = data.description;
      if (data.notes !== undefined) dataToUpdate.notes = data.notes;
+     if (data.termsAndConditions !== undefined) dataToUpdate.termsAndConditions = data.termsAndConditions; // FIXED: Added termsAndConditions
      if (data.validUntil !== undefined) dataToUpdate.validUntil = data.validUntil;
      if (data.customerReference !== undefined) dataToUpdate.customerReference = data.customerReference;
      if (data.contactEmail !== undefined) dataToUpdate.contactEmail = data.contactEmail;

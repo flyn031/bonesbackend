@@ -114,6 +114,7 @@ function prepareQuoteForFrontend(quote: any): any {
         isLatestVersion: quote.isLatestVersion,
         changeReason: quote.changeReason || '',
         parentQuoteId: quote.parentQuoteId || null,
+        termsAndConditions: quote.termsAndConditions || '', // Add this to preserve terms in frontend response
     };
     return baseQuote;
 }
@@ -196,7 +197,8 @@ router.get('/:id', asyncHandler(getQuoteById));
 // CREATE route - ADD AUDIT MIDDLEWARE
 router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRequest, res: Response) => {
     console.log('🎯 [QUOTES] CREATE route hit');
-    const { customerId, title, description, items = [], validUntil, status, customerReference, contactEmail, contactPerson, contactPhone, value, totalAmount } = req.body;
+    // FIXED: Added termsAndConditions to destructuring
+    const { customerId, title, description, items = [], validUntil, status, customerReference, contactEmail, contactPerson, contactPhone, value, totalAmount, termsAndConditions } = req.body;
     
     if (!customerId || !title || !items || !Array.isArray(items)) {
         res.status(400).json({ message: 'Missing required fields: customerId, title, items' });
@@ -209,6 +211,7 @@ router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRe
     }
     const quoteData = {
         customerId, title, description,
+        termsAndConditions, // FIXED: Added termsAndConditions to quoteData
         lineItems: items.map((item: any) => ({
             description: item.description || '',
             quantity: parseFloat(item.quantity?.toString() || '1') || 1,
