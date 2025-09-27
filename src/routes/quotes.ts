@@ -311,3 +311,4 @@ router.post('/:id/convert-to-order', auditQuoteMiddleware('CONVERTED_TO_ORDER'),
 console.log('🎯 [QUOTES] Router setup complete - exporting router');
 
 export default router;// Production rebuild Fri Sep 26 20:07:54 BST 2025
+console.log('Force rebuild Sat Sep 27 10:10:22 BST 2025');
