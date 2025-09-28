@@ -259,7 +259,20 @@ router.patch('/:id/status', auditStatusChangeMiddleware('quote'), asyncHandler(u
 
 // UPDATE route - ADD AUDIT MIDDLEWARE
 router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(updateQuote));
-router.patch('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(updateQuote));
+
+// DIAGNOSTIC PATCH route - with detailed logging
+router.patch('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(async (req: AuthRequest, res: Response) => {
+    console.log('🚦 [PROD DEBUG] Incoming PATCH /quotes/:id');
+    console.log('🚦 [PROD DEBUG] Quote ID:', req.params.id);
+    console.log('🚦 [PROD DEBUG] Full request body:', JSON.stringify(req.body, null, 2));
+    console.log('🚦 [PROD DEBUG] termsAndConditions field:', req.body?.termsAndConditions);
+    console.log('🚦 [PROD DEBUG] termsAndConditions length:', req.body?.termsAndConditions?.length);
+    console.log('🚦 [PROD DEBUG] Content-Type:', req.headers['content-type']);
+    console.log('🚦 [PROD DEBUG] All request headers:', JSON.stringify(req.headers, null, 2));
+    
+    // Call the existing updateQuote controller
+    return updateQuote(req, res);
+}));
 
 // DELETE route - ADD AUDIT MIDDLEWARE
 router.delete('/:id', auditQuoteMiddleware('DELETE'), asyncHandler(deleteQuote));

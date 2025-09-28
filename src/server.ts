@@ -25,7 +25,11 @@ import customerPricingRoutes from './routes/customerPricing';
 
 dotenv.config();
 const app = express();
-const prisma = new PrismaClient();
+
+// UPDATED: Add SQL logging to Prisma client for debugging
+const prisma = new PrismaClient({
+  log: ['query', 'info', 'warn', 'error'],
+});
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
