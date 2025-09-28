@@ -259,6 +259,7 @@ router.patch('/:id/status', auditStatusChangeMiddleware('quote'), asyncHandler(u
 
 // UPDATE route - ADD AUDIT MIDDLEWARE
 router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(updateQuote));
+router.patch('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(updateQuote));
 
 // DELETE route - ADD AUDIT MIDDLEWARE
 router.delete('/:id', auditQuoteMiddleware('DELETE'), asyncHandler(deleteQuote));
