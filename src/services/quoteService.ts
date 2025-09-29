@@ -7,9 +7,13 @@ interface QuoteInputData {
   customerId: string;
   title: string;
   description?: string;
-  termsAndConditions?: string;
+  termsAndConditions?: string; // Keep for additional notes
+  paymentTerms?: string; // NEW
+  deliveryTerms?: string; // NEW
+  warranty?: string; // NEW
+  exclusions?: string; // NEW
   notes?: string;   
-  totalAmount?: number; // Frontend might send number, backend should handle as Decimal
+  totalAmount?: number;
   validUntil?: Date;
   createdById: string;
   customerReference?: string;
@@ -19,8 +23,8 @@ interface QuoteInputData {
   lineItems: Array<{
     description: string;
     quantity: number;
-    unitPrice: number; // Frontend might send number
-    materialId: string | null | undefined; // Expecting material CODE here from frontend
+    unitPrice: number;
+    materialId: string | null | undefined;
   }>;
   status?: QuoteStatus;
 }
@@ -35,37 +39,36 @@ async function processLineItemsWithMaterialCodeLookup(
   lineItemsInput: Array<{
     description: string;
     quantity: number;
-    unitPrice: number; // Frontend sends number
-    materialId: string | null | undefined; // Expecting material CODE here
+    unitPrice: number;
+    materialId: string | null | undefined;
   }>
 ): Promise<Array<Prisma.QuoteLineItemCreateWithoutQuoteInput>> {
   const processedLineItems: Array<Prisma.QuoteLineItemCreateWithoutQuoteInput> = [];
   for (const item of lineItemsInput) {
-    let actualMaterialDatabaseId: string | undefined = undefined; // This will store the CUID
+    let actualMaterialDatabaseId: string | undefined = undefined;
 
     if (item.materialId && String(item.materialId).trim() !== '') {
       const materialCodeFromFrontend = String(item.materialId).trim();
       console.log(`[QuoteService][Helper] Attempting to find material with code: '${materialCodeFromFrontend}'`);
       const materialRecord = await prisma.material.findUnique({
         where: { code: materialCodeFromFrontend },
-        select: { id: true }, // Only fetch the 'id' (CUID)
+        select: { id: true },
       });
 
       if (!materialRecord) {
         console.warn(`[QuoteService][Helper] WARNING: Material with code '${materialCodeFromFrontend}' NOT FOUND in database. Proceeding without material link.`);
-        actualMaterialDatabaseId = undefined; // Don't link to material if not found
+        actualMaterialDatabaseId = undefined;
       } else {
-        actualMaterialDatabaseId = materialRecord.id; // Use the actual database CUID
+        actualMaterialDatabaseId = materialRecord.id;
         console.log(`[QuoteService][Helper] Found material CUID: '${actualMaterialDatabaseId}' for code: '${materialCodeFromFrontend}'`);
       }
     }
 
-    // Fix 1: Ensure quantity and unitPrice are converted properly for Prisma
     processedLineItems.push({
       description: item.description,
-      quantity: item.quantity,  // Store as number instead of Decimal
-      unitPrice: item.unitPrice, // Store as number instead of Decimal
-      ...(actualMaterialDatabaseId && { // Conditionally connect to material if CUID was found
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      ...(actualMaterialDatabaseId && {
         material: {
           connect: { id: actualMaterialDatabaseId },
         },
@@ -75,23 +78,19 @@ async function processLineItemsWithMaterialCodeLookup(
   return processedLineItems;
 }
 
-// Define type for CompanySettings that includes defaultVatRate
 type CompanySettingsWithVat = CompanySettings;
 
-// --- Helper Function for Quote Reference ---
+// --- Helper Function for Quote Reference with configurable padding ---
 async function generateQuoteReference(): Promise<string> {
   let settings = await prisma.companySettings.findFirst();
   if (!settings) {
     console.warn("[QuoteService][generateQuoteReference] CompanySettings not found, creating default settings...");
     try {
-        // Create settings with defaultVatRate if needed
         settings = await prisma.companySettings.create({
             data: {
                 quoteReferencePrefix: 'QR',
                 lastQuoteReferenceSeq: 0,
-                // Use an additional field for defaultVatRate if needed
-                // This assumes schema has been updated to include this field
-                // If not, you'll need to store VAT rate elsewhere
+                quoteNumberPadding: 4,
             }
         });
         console.log("[QuoteService][generateQuoteReference] Default CompanySettings created.");
@@ -100,18 +99,20 @@ async function generateQuoteReference(): Promise<string> {
          return `QR-ERR-${Date.now()}`;
     }
   }
-  // Use a transaction to ensure atomicity for incrementing sequence number
+  
   const updatedSettings = await prisma.companySettings.update({
     where: { id: settings.id },
     data: { lastQuoteReferenceSeq: { increment: 1 } },
   });
+  
   const prefix = updatedSettings.quoteReferencePrefix || 'QR';
   const sequence = updatedSettings.lastQuoteReferenceSeq;
-  const paddedSequence = sequence.toString().padStart(4, '0'); // Ensure consistent padding
+  const padding = updatedSettings.quoteNumberPadding || 4;
+  const paddedSequence = sequence.toString().padStart(padding, '0');
+  
   return `${prefix}-${paddedSequence}`;
 }
 
-// Helper function to calculate totals - exported to fix the missing reference error
 export const calculateQuoteTotals = (items: Array<{ quantity?: number; unitPrice?: number }>) => {
   return items.reduce((sum: number, item) => {
     return sum + ((item.quantity ?? 0) * (item.unitPrice ?? 0));
@@ -120,36 +121,30 @@ export const calculateQuoteTotals = (items: Array<{ quantity?: number; unitPrice
 
 // --- Service Functions ---
 export const createQuoteV1 = async (data: QuoteInputData) => {
-  console.log('🔥 CREATEQUOTEV1 CALLED WITH TERMS:', data.termsAndConditions);
+  console.log('🔥 CREATEQUOTEV1 CALLED');
   console.log('[QuoteService][createQuoteV1] Received raw payload:', JSON.stringify(data, null, 2));
-  console.log('[QuoteService][createQuoteV1] Received raw payload:', JSON.stringify(data, null, 2));
+  
+  // Fetch company settings for defaults
+  const companySettings = await prisma.companySettings.findFirst() as CompanySettingsWithVat;
+  
   const quoteReference = await generateQuoteReference();
   const versionNumber = 1;
   const quoteNumber = `${quoteReference}-v${versionNumber}`;
 
   const lineItemsForDb = await processLineItemsWithMaterialCodeLookup(data.lineItems);
 
-  // Calculate total amount from items
   const totalAmountFromItems = lineItemsForDb.reduce((sum, item) => {
-    // Handle as regular numbers instead of Decimals
     return sum + ((item.quantity ?? 0) * (item.unitPrice ?? 0));
   }, 0); 
 
-  // Get company settings
-  const companySettings = await prisma.companySettings.findFirst() as CompanySettingsWithVat;
-  
-  // Calculate VAT - handle as regular number calculation
-  const vatRate = 20; // Default VAT rate if not set
+  const vatRate = 20;
   const vatMultiplier = 1 + (vatRate / 100);
 
-  // Calculate final total
   const finalTotal = data.totalAmount !== undefined
     ? data.totalAmount
     : totalAmountFromItems * vatMultiplier;
 
-  console.log(`[QuoteService][createQuoteV1] User ID: ${data.createdById}, Customer ID: ${data.customerId}`);
   console.log(`[QuoteService][createQuoteV1] Calculated finalTotal: ${finalTotal}`);
-  console.log('[QuoteService][createQuoteV1] Line items processed for DB (with CUIDs for materialId):', JSON.stringify(lineItemsForDb, null, 2));
 
   try {
     return await prisma.quote.create({
@@ -157,15 +152,20 @@ export const createQuoteV1 = async (data: QuoteInputData) => {
         customerId: data.customerId,
         title: data.title,
         description: data.description,
-        status: data.status || QuoteStatus.DRAFT, // Default to DRAFT
+        status: data.status || QuoteStatus.DRAFT,
         validUntil: data.validUntil,
         createdById: data.createdById,
         customerReference: data.customerReference,
         contactEmail: data.contactEmail,
         contactPerson: data.contactPerson,
         contactPhone: data.contactPhone,
+        // Inherit company defaults if not provided
+        paymentTerms: data.paymentTerms || companySettings?.standardWarranty || 'Net 30',
+        deliveryTerms: data.deliveryTerms || companySettings?.standardDeliveryTerms || `Delivery ${companySettings?.defaultLeadTimeWeeks || 4} weeks from order`,
+        warranty: data.warranty || companySettings?.standardWarranty || 'Standard 12 month warranty',
+        exclusions: data.exclusions || companySettings?.standardExclusions || 'VAT, Installation, Delivery',
         termsAndConditions: data.termsAndConditions,
-        totalAmount: finalTotal, // Use number instead of Decimal
+        totalAmount: finalTotal,
         quoteReference: quoteReference,
         versionNumber: versionNumber,
         isLatestVersion: true,
@@ -194,7 +194,6 @@ export const createNewQuoteVersion = async (data: QuoteVersionInputData) => {
   const parentQuote = await prisma.quote.findUnique({ where: { id: parentQuoteId } });
   if (!parentQuote) throw new Error(`Parent quote with ID ${parentQuoteId} not found.`);
   
-  // Create an array of valid status values to check against
   const invalidStatusValues: QuoteStatus[] = [QuoteStatus.APPROVED, QuoteStatus.DECLINED, QuoteStatus.EXPIRED, QuoteStatus.CONVERTED];
   if (parentQuote.status && invalidStatusValues.includes(parentQuote.status)) {
       throw new Error(`Cannot create new version from quote with status ${parentQuote.status}. Clone instead.`);
@@ -202,27 +201,19 @@ export const createNewQuoteVersion = async (data: QuoteVersionInputData) => {
 
   const lineItemsForDb = await processLineItemsWithMaterialCodeLookup(newData.lineItems);
 
-  // Calculate total amount from items as numbers
   const totalAmountFromItems = lineItemsForDb.reduce((sum, item) => {
     return sum + ((item.quantity ?? 0) * (item.unitPrice ?? 0));
   }, 0);
 
-  // Get company settings
-  const companySettings = await prisma.companySettings.findFirst() as CompanySettingsWithVat;
-  
-  // Calculate VAT - handle as regular number calculation
-  const vatRate = 20; // Default VAT rate if not set
+  const vatRate = 20;
   const vatMultiplier = 1 + (vatRate / 100);
 
-  // Calculate final total
   const finalTotal = newData.totalAmount !== undefined
     ? newData.totalAmount
     : totalAmountFromItems * vatMultiplier;
 
   const newVersionNumber = parentQuote.versionNumber + 1;
   const newQuoteNumber = `${parentQuote.quoteReference}-v${newVersionNumber}`;
-
-  console.log('[QuoteService][createNewQuoteVersion] Line items processed for DB:', JSON.stringify(lineItemsForDb, null, 2));
 
   const newVersion = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.quote.update({ where: { id: parentQuoteId }, data: { isLatestVersion: false } });
@@ -232,7 +223,11 @@ export const createNewQuoteVersion = async (data: QuoteVersionInputData) => {
         quoteReference: parentQuote.quoteReference,
         title: newData.title,
         description: newData.description,
-        termsAndConditions: newData.termsAndConditions, // FIXED: Added termsAndConditions
+        termsAndConditions: newData.termsAndConditions,
+        paymentTerms: newData.paymentTerms || parentQuote.paymentTerms,
+        deliveryTerms: newData.deliveryTerms || parentQuote.deliveryTerms,
+        warranty: newData.warranty || parentQuote.warranty,
+        exclusions: newData.exclusions || parentQuote.exclusions,
         status: newData.status || parentQuote.status,
         validUntil: newData.validUntil,
         createdById: newData.createdById,
@@ -240,7 +235,7 @@ export const createNewQuoteVersion = async (data: QuoteVersionInputData) => {
         contactEmail: newData.contactEmail,
         contactPerson: newData.contactPerson,
         contactPhone: newData.contactPhone,
-        totalAmount: finalTotal, // Store as number not Decimal
+        totalAmount: finalTotal,
         versionNumber: newVersionNumber,
         isLatestVersion: true,
         changeReason: changeReason,
@@ -252,7 +247,7 @@ export const createNewQuoteVersion = async (data: QuoteVersionInputData) => {
       },
       include: { customer: true, lineItems: { include: { material: true } }, createdBy: true },
     });
-    return createdQuote; // Return the created quote from the transaction
+    return createdQuote;
   });
   return newVersion;
 };
@@ -295,25 +290,22 @@ export const getQuoteHistory = async (quoteReference: string) => {
     });
 }
 
-// Export the function to match the import in the test files
 export const getQuoteHistoryByReference = getQuoteHistory;
 
 export const cloneQuote = async (sourceQuoteId: string, userId: string, targetCustomerId?: string, newTitle?: string) => {
   const sourceQuote = await prisma.quote.findUnique({
     where: { id: sourceQuoteId },
     include: {
-      lineItems: { include: { material: { select: { code: true } } } } // Fetch material code
+      lineItems: { include: { material: { select: { code: true } } } }
     }
   });
   if (!sourceQuote) throw new Error(`Quote version with ID ${sourceQuoteId} not found for cloning.`);
 
-  // Pass material CODEs to createQuoteV1, as it now handles the lookup
-  // No need for toNumber() since lineItems are stored as regular numbers
   const lineItemsForCloneInput = sourceQuote.lineItems.map((item) => ({
     description: item.description,
-    quantity: Number(item.quantity), // Ensure it's a number
-    unitPrice: Number(item.unitPrice), // Ensure it's a number
-    materialId: item.material?.code, // Use the material CODE here
+    quantity: Number(item.quantity),
+    unitPrice: Number(item.unitPrice),
+    materialId: item.material?.code,
   }));
 
   const newQuoteData: QuoteInputData = {
@@ -321,7 +313,11 @@ export const cloneQuote = async (sourceQuoteId: string, userId: string, targetCu
     title: newTitle || `${sourceQuote.title} (Clone)`,
     description: sourceQuote.description || undefined,
     termsAndConditions: sourceQuote.termsAndConditions || undefined,
-    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Default 30 days validity
+    paymentTerms: sourceQuote.paymentTerms || undefined,
+    deliveryTerms: sourceQuote.deliveryTerms || undefined,
+    warranty: sourceQuote.warranty || undefined,
+    exclusions: sourceQuote.exclusions || undefined,
+    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     createdById: userId,
     customerReference: sourceQuote.customerReference || undefined,
     contactEmail: sourceQuote.contactEmail || undefined,
@@ -329,12 +325,10 @@ export const cloneQuote = async (sourceQuoteId: string, userId: string, targetCu
     contactPhone: sourceQuote.contactPhone || undefined,
     status: QuoteStatus.DRAFT,
     lineItems: lineItemsForCloneInput,
-    // totalAmount will be recalculated by createQuoteV1 if not explicitly provided
   };
   return createQuoteV1(newQuoteData);
 };
 
-// Export the function to match the import in the controller
 export const cloneQuoteController = cloneQuote;
 
 export const convertQuoteToOrder = async (quoteId: string, userId: string) => {
@@ -353,20 +347,18 @@ export const convertQuoteToOrder = async (quoteId: string, userId: string) => {
     if (!quoteVersion.createdById) throw new Error(`Quote ${quoteId} missing creator information for order ownership.`);
 
     const orderLineItemsJson = quoteVersion.lineItems.map(qli => ({
-        materialId: qli.materialId, // This is the actual CUID
-        materialCode: qli.material?.code, // Store the code
+        materialId: qli.materialId,
+        materialCode: qli.material?.code,
         description: qli.description,
-        quantity: Number(qli.quantity), // Convert to number if needed
-        unitPrice: Number(qli.unitPrice), // Convert to number if needed
-        total: Number(qli.quantity) * Number(qli.unitPrice), // Calculate without times()
+        quantity: Number(qli.quantity),
+        unitPrice: Number(qli.unitPrice),
+        total: Number(qli.quantity) * Number(qli.unitPrice),
     }));
 
-    // Get company settings with default VAT rate
     const companySettings = await prisma.companySettings.findFirst() as CompanySettingsWithVat;
     
-    // Use regular number calculations
     const totalAmount = Number(quoteVersion.totalAmount);
-    const vatRate = 20; // Default VAT rate
+    const vatRate = 20;
     const vatMultiplier = 1 + (vatRate / 100);
     const subTotal = totalAmount / vatMultiplier;
     const totalTax = totalAmount - subTotal;
@@ -375,27 +367,27 @@ export const convertQuoteToOrder = async (quoteId: string, userId: string) => {
         projectTitle: quoteVersion.title || `Order from Quote ${quoteVersion.quoteNumber || quoteId}`,
         quoteRef: quoteVersion.quoteNumber || quoteVersion.quoteReference || quoteId,
         orderType: OrderType.CUSTOMER_LINKED,
-        status: OrderStatus.IN_PRODUCTION, // ✅ FIXED: Use valid OrderStatus from database
+        status: OrderStatus.IN_PRODUCTION,
         customerName: quoteVersion.customer.name,
         contactPerson: quoteVersion.contactPerson || (quoteVersion.customer as any).contactPerson || quoteVersion.customer.name,
         contactPhone: quoteVersion.contactPhone || quoteVersion.customer.phone || '',
         contactEmail: quoteVersion.contactEmail || quoteVersion.customer.email || '',
-        projectValue: totalAmount, // Use number instead of Decimal
-        marginPercent: 0, // Use number instead of Decimal
-        leadTimeWeeks: 4, // Default value
-        items: orderLineItemsJson as Prisma.InputJsonValue[], // Correct type for JsonArray in create
+        projectValue: totalAmount,
+        marginPercent: 0,
+        leadTimeWeeks: 4,
+        items: orderLineItemsJson as Prisma.InputJsonValue[],
         paymentTerms: (quoteVersion.customer as any).paymentTerms || PaymentTerms.THIRTY_DAYS,
-        currency: 'GBP', // Default currency
-        vatRate: vatRate, // Store as number
-        subTotal: subTotal, // Store as number
-        totalTax: totalTax, // Store as number
-        totalAmount: totalAmount, // Store as number
-        profitMargin: 0, // Use number instead of Decimal
+        currency: 'GBP',
+        vatRate: vatRate,
+        subTotal: subTotal,
+        totalTax: totalTax,
+        totalAmount: totalAmount,
+        profitMargin: 0,
         notes: `Converted from Quote: ${quoteVersion.quoteNumber || quoteVersion.quoteReference || quoteId} v${quoteVersion.versionNumber}`,
-        customer: { connect: { id: quoteVersion.customerId } }, // Connect to existing customer
-        sourceQuote: { connect: { id: quoteVersion.id } }, // Connect to existing quote
-        projectOwner: { connect: { id: quoteVersion.createdById } }, // Connect to project owner (creator of quote)
-        createdBy: { connect: { id: userId } }, // Connect to user who performed the conversion
+        customer: { connect: { id: quoteVersion.customerId } },
+        sourceQuote: { connect: { id: quoteVersion.id } },
+        projectOwner: { connect: { id: quoteVersion.createdById } },
+        createdBy: { connect: { id: userId } },
     };
 
     const transactionResult = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -410,7 +402,6 @@ export const convertQuoteToOrder = async (quoteId: string, userId: string) => {
     return transactionResult;
 };
 
-// Export the function to match the import in the controller
 export const convertQuoteToOrderController = convertQuoteToOrder;
 
 export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInputData>) => {
@@ -423,19 +414,21 @@ export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInput
      if (data.title !== undefined) dataToUpdate.title = data.title;
      if (data.description !== undefined) dataToUpdate.description = data.description;
      if (data.notes !== undefined) dataToUpdate.notes = data.notes;
-     if (data.termsAndConditions !== undefined) dataToUpdate.termsAndConditions = data.termsAndConditions; // FIXED: Added termsAndConditions
+     if (data.termsAndConditions !== undefined) dataToUpdate.termsAndConditions = data.termsAndConditions;
+     if (data.paymentTerms !== undefined) dataToUpdate.paymentTerms = data.paymentTerms;
+     if (data.deliveryTerms !== undefined) dataToUpdate.deliveryTerms = data.deliveryTerms;
+     if (data.warranty !== undefined) dataToUpdate.warranty = data.warranty;
+     if (data.exclusions !== undefined) dataToUpdate.exclusions = data.exclusions;
      if (data.validUntil !== undefined) dataToUpdate.validUntil = data.validUntil;
      if (data.customerReference !== undefined) dataToUpdate.customerReference = data.customerReference;
      if (data.contactEmail !== undefined) dataToUpdate.contactEmail = data.contactEmail;
      if (data.contactPerson !== undefined) dataToUpdate.contactPerson = data.contactPerson;
      if (data.contactPhone !== undefined) dataToUpdate.contactPhone = data.contactPhone;
-     // Only allow status change to DRAFT if explicitly provided and is DRAFT
      if (data.status !== undefined && data.status === QuoteStatus.DRAFT) dataToUpdate.status = data.status;
 
      if (data.lineItems || data.totalAmount !== undefined) {
         let finalTotal: number;
         if (data.lineItems) {
-            // Delete existing line items first
             await prisma.quoteLineItem.deleteMany({
                 where: { quoteId: quoteId }
             });
@@ -443,16 +436,13 @@ export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInput
             const lineItemsForDb = await processLineItemsWithMaterialCodeLookup(data.lineItems);
             console.log('[QuoteService][updateDraftQuote] Line items processed for DB:', JSON.stringify(lineItemsForDb, null, 2));
 
-            // Calculate total using regular number math
             const totalAmountFromItems = lineItemsForDb.reduce((sum, item) => {
                 return sum + ((item.quantity ?? 0) * (item.unitPrice ?? 0));
             }, 0);
 
-            // Get company settings with default VAT rate
             const companySettings = await prisma.companySettings.findFirst() as CompanySettingsWithVat;
             
-            // Use regular number calculations
-            const vatRate = 20; // Default VAT rate
+            const vatRate = 20;
             const vatMultiplier = 1 + (vatRate / 100);
 
             finalTotal = data.totalAmount !== undefined
@@ -465,11 +455,13 @@ export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInput
         } else if (data.totalAmount !== undefined) {
             finalTotal = data.totalAmount;
         } else {
-            finalTotal = Number(quote.totalAmount); // Ensure it's a number
+            finalTotal = Number(quote.totalAmount);
         }
         dataToUpdate.totalAmount = finalTotal;
      }
-    console.log('[QuoteService][updateDraftQuote] FINAL dataToUpdate being sent to Prisma:', JSON.stringify(dataToUpdate, null, 2));
+    
+     console.log('[QuoteService][updateDraftQuote] FINAL dataToUpdate being sent to Prisma:', JSON.stringify(dataToUpdate, null, 2));
+     
      return prisma.quote.update({
         where: { id: quoteId },
         data: dataToUpdate,
@@ -486,7 +478,6 @@ export const updateQuoteStatus = async (quoteId: string, newStatus: QuoteStatus,
 
   if (!quote) throw new Error(`Quote ${quoteId} not found.`);
   if (quote.status === newStatus) {
-    // If status is already the desired status, just return the current quote
     return prisma.quote.findUnique({
         where: {id: quoteId},
         include: { customer: { select: { name: true, id: true } }, lineItems: { include: { material: true } }, createdBy: { select: { name: true, id: true } } }
@@ -503,9 +494,8 @@ export const updateQuoteStatus = async (quoteId: string, newStatus: QuoteStatus,
   if (newStatus === QuoteStatus.SENT && quote.status !== QuoteStatus.SENT) {
     const sentDateStr = new Date().toISOString().split('T')[0];
     let currentDescription = quote.description || '';
-    // Use regex to remove existing "Sent on: YYYY-MM-DD;" entries to avoid duplication
     currentDescription = currentDescription.replace(/Sent on:\s*\d{4}-\d{2}-\d{2}\s*;?\s*/g, '').trim();
-    dataToUpdate.description = `Sent on: ${sentDateStr}; ${currentDescription}`.replace(/;\s*$/, '').trim();
+    dataToUpdate.description = `Sent on: ${sentDateStr}${currentDescription ? '; ' + currentDescription : ''}`;
   }
 
   const updatedQuote = await prisma.quote.update({
