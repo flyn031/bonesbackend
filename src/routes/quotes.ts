@@ -254,13 +254,8 @@ router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRe
     }
 }));
 
-// STATUS UPDATE route - ADD SPECIFIC STATUS AUDIT
-router.patch('/:id/status', auditStatusChangeMiddleware('quote'), asyncHandler(updateQuoteStatus));
 
-// UPDATE route - ADD AUDIT MIDDLEWARE
-router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(updateQuote));
 
-// DIAGNOSTIC PATCH route - with detailed logging
 router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     console.log('🚦 [PROD DEBUG] Incoming PUT /quotes/:id');
     console.log('🚦 [PROD DEBUG] Quote ID:', req.params.id);
@@ -269,7 +264,6 @@ router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(async (req: Auth
     console.log('🚦 [PROD DEBUG] termsAndConditions length:', req.body?.termsAndConditions?.length);
     console.log('🚦 [PROD DEBUG] Content-Type:', req.headers['content-type']);
     
-    // Call the existing updateQuote controller
     return updateQuote(req, res, next);
 }));
 
