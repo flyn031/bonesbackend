@@ -469,7 +469,7 @@ export const updateDraftQuote = async (quoteId: string, data: Partial<QuoteInput
         }
         dataToUpdate.totalAmount = finalTotal;
      }
-
+    console.log('[QuoteService][updateDraftQuote] FINAL dataToUpdate being sent to Prisma:', JSON.stringify(dataToUpdate, null, 2));
      return prisma.quote.update({
         where: { id: quoteId },
         data: dataToUpdate,
