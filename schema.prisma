@@ -316,6 +316,7 @@ model CompanySettings {
   updatedAt             DateTime @updatedAt
   lastQuoteReferenceSeq Int      @default(0)
   quoteReferencePrefix  String   @default("QR")
+  quoteNumberPadding    Int      @default(4)  // ADD THIS LINE
   companyAddress        String?
   companyEmail          String?
   companyLogo           String?
@@ -343,6 +344,10 @@ model Quote {
   description       String?
   notes             String?         // Add this line
   termsAndConditions String?  
+  paymentTerms       String?  // ADD THIS
+  deliveryTerms      String?  // ADD THIS
+  warranty           String?  // ADD THIS
+  exclusions         String?  // ADD THIS
   status            QuoteStatus     @default(DRAFT)
   totalAmount       Float           @default(0)
   validUntil        DateTime?

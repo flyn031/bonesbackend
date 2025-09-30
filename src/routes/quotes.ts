@@ -4,18 +4,15 @@ import express, { Request, Response, NextFunction } from 'express';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { PrismaClient, QuoteStatus, Prisma } from '@prisma/client';
 
-// Import all controller functions directly for better type checking
 import {
   getFrequentItems,
   getQuoteById,
   updateQuoteStatus,
   updateQuote,
   deleteQuote,
-  createQuote, // This exists in the controller
-  // Import these directly from the service since they're not exported from the controller
+  createQuote,
 } from '../controllers/quoteController';
 
-// Import the missing functions directly from the service
 import { 
   getQuoteHistoryByReference,
   cloneQuoteController,
@@ -23,7 +20,6 @@ import {
   createQuoteV1 
 } from '../services/quoteService';
 
-// ADD AUDIT MIDDLEWARE IMPORT
 import { auditQuoteMiddleware, auditStatusChangeMiddleware } from '../middleware/auditMiddleware';
 
 console.log('!!! QUOTES ROUTE FILE BEING LOADED !!!');
@@ -31,44 +27,33 @@ console.log('!!! QUOTES ROUTE FILE BEING LOADED !!!');
 const prisma = new PrismaClient();
 const router = express.Router();
 
-// Define AuthRequest interface for type safety (assuming user property)
-// This interface should ideally be in src/types/express.d.ts for global augmentation
-// but defining it here for immediate clarity if that's not fully set up.
 interface UserPayload {
   id: string;
   role: string;
   [key: string]: any;
 }
 interface AuthRequest extends Request {
-  user?: UserPayload; // Assuming user always has id and role
+  user?: UserPayload;
 }
 
-// Utility to wrap async functions to catch errors and pass to Express error handling
-// Ensure that the 'req' parameter passed to fn is `AuthRequest` for type safety
 const asyncHandler = (fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<any>) =>
   (req: Request, res: Response, next: NextFunction) => {
-    // Cast req to AuthRequest inside asyncHandler to ensure proper typing for the wrapped function
     Promise.resolve(fn(req as AuthRequest, res, next)).catch(next);
   };
 
-// 🔧 DEBUGGING: First middleware - should hit before auth
 router.use((req, res, next) => {
     console.log('🎯 [QUOTES ROUTER] ENTRY - before auth:', req.method, req.path);
     next();
 });
 
-// Protect all quote routes with authentication
 router.use(authenticateToken);
 
-// 🔧 DEBUGGING: Second middleware - should hit after auth
 router.use((req, res, next) => {
     console.log('🎯 [QUOTES ROUTER] AFTER AUTH:', req.method, req.path);
     next();
 });
 
-// --- HELPER FUNCTIONS (Copied from your provided file - ensure these are correctly typed elsewhere or in this file) ---
-// These helper functions might be better placed in a utility file or within the service/controller
-// as they are presentation logic. For now, keeping them as-is.
+// HELPER FUNCTIONS
 function simplifyValue(value: any): any {
     if (value === null || value === undefined) { return null; }
     if (typeof value === 'object') {
@@ -89,6 +74,7 @@ function simplifyValue(value: any): any {
     return value;
 }
 
+// FIXED: Added 4 new fields to prepareQuoteForFrontend
 function prepareQuoteForFrontend(quote: any): any {
     const baseQuote = {
         id: quote.id,
@@ -114,25 +100,24 @@ function prepareQuoteForFrontend(quote: any): any {
         isLatestVersion: quote.isLatestVersion,
         changeReason: quote.changeReason || '',
         parentQuoteId: quote.parentQuoteId || null,
-        termsAndConditions: quote.termsAndConditions || '', // Add this to preserve terms in frontend response
+        termsAndConditions: quote.termsAndConditions || '',
+        paymentTerms: quote.paymentTerms || '', // FIXED: Added
+        deliveryTerms: quote.deliveryTerms || '', // FIXED: Added
+        warranty: quote.warranty || '', // FIXED: Added
+        exclusions: quote.exclusions || '', // FIXED: Added
     };
     return baseQuote;
 }
-// --- END HELPER FUNCTIONS ---
 
+// ROUTES
 
-// --- ROUTES ---
-
-// 🔧 DEBUGGING: Simple test route with enhanced logging
 router.get('/simple-test', (req, res) => {
     console.log('🧪 [QUOTES] SIMPLE TEST ROUTE HIT !!!');
     res.json({ message: 'Simple test works!', timestamp: new Date().toISOString() });
 });
 
-// GET routes (applying asyncHandler)
 router.get('/frequent-items', asyncHandler(getFrequentItems));
 
-// 🔧 ENHANCED DEBUGGING: Main GET route with step-by-step logging
 router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     console.log('🎯 [QUOTES] === MAIN GET ROUTE HIT ===');
     console.log('🎯 [QUOTES] Query params:', req.query);
@@ -142,7 +127,6 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
         const onlyLatest = req.query.all !== 'true';
         console.log('🎯 [QUOTES] onlyLatest filter:', onlyLatest);
         
-        // Test query without any filters first
         console.log('🎯 [QUOTES] Testing database connection...');
         const allQuotes = await prisma.quote.findMany();
         console.log(`🎯 [QUOTES] Total quotes in DB (no filters): ${allQuotes.length}`);
@@ -155,7 +139,6 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
             });
         }
         
-        // Now with the actual query
         console.log('🎯 [QUOTES] Running filtered query...');
         const quotes = await prisma.quote.findMany({
             where: onlyLatest ? { isLatestVersion: true } : undefined,
@@ -183,7 +166,6 @@ router.get('/', asyncHandler(async (req: AuthRequest, res: Response) => {
     }
 }));
 
-// Create a wrapper to adapt service function to work with route handler
 const getQuoteHistoryByReferenceHandler = async (req: AuthRequest, res: Response) => {
     const { quoteReference } = req.params;
     const history = await getQuoteHistoryByReference(quoteReference);
@@ -194,24 +176,47 @@ const getQuoteHistoryByReferenceHandler = async (req: AuthRequest, res: Response
 router.get('/history/:quoteReference', asyncHandler(getQuoteHistoryByReferenceHandler));
 router.get('/:id', asyncHandler(getQuoteById));
 
-// CREATE route - ADD AUDIT MIDDLEWARE
+// FIXED: Added 4 new fields to destructuring and quoteData
 router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRequest, res: Response) => {
     console.log('🎯 [QUOTES] CREATE route hit');
-    // FIXED: Added termsAndConditions to destructuring
-    const { customerId, title, description, items = [], validUntil, status, customerReference, contactEmail, contactPerson, contactPhone, value, totalAmount, termsAndConditions } = req.body;
+    const { 
+        customerId, 
+        title, 
+        description, 
+        items = [], 
+        validUntil, 
+        status, 
+        customerReference, 
+        contactEmail, 
+        contactPerson, 
+        contactPhone, 
+        value, 
+        totalAmount, 
+        termsAndConditions,
+        paymentTerms, // FIXED: Added
+        deliveryTerms, // FIXED: Added
+        warranty, // FIXED: Added
+        exclusions // FIXED: Added
+    } = req.body;
     
     if (!customerId || !title || !items || !Array.isArray(items)) {
         res.status(400).json({ message: 'Missing required fields: customerId, title, items' });
-        return; // Add return for early exit
+        return;
     }
     const userId = req.user?.id;
     if (!userId) {
         res.status(401).json({ message: 'User authentication failed or user ID missing' });
-        return; // Add return for early exit
+        return;
     }
     const quoteData = {
-        customerId, title, description,
-        termsAndConditions, // FIXED: Added termsAndConditions to quoteData
+        customerId, 
+        title, 
+        description,
+        termsAndConditions,
+        paymentTerms, // FIXED: Added
+        deliveryTerms, // FIXED: Added
+        warranty, // FIXED: Added
+        exclusions, // FIXED: Added
         lineItems: items.map((item: any) => ({
             description: item.description || '',
             quantity: parseFloat(item.quantity?.toString() || '1') || 1,
@@ -219,23 +224,22 @@ router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRe
             materialId: item.materialId || null
         })),
         validUntil: validUntil ? new Date(validUntil) : undefined,
-        status: status as QuoteStatus || undefined, // Ensure status is explicitly of QuoteStatus type or undefined
-        customerReference, contactEmail, contactPerson, contactPhone,
+        status: status as QuoteStatus || undefined,
+        customerReference, 
+        contactEmail, 
+        contactPerson, 
+        contactPhone,
         createdById: userId,
         totalAmount: value || totalAmount
     };
     try {
-        // Direct call to service function - the audit middleware will use the 'CREATE' action.
-        // If you want `createQuote` controller to handle the response, then you would call `createQuote` here.
-        // Assuming createQuoteV1 is intended to be called directly from the route for now.
         const newQuoteVersion = await createQuoteV1(quoteData);
         
-        // ADDED: Logging the created quote before sending to frontend
         console.log('🎯 [QUOTES] Successfully created quote with ID:', newQuoteVersion.id);
         console.log('🎯 [QUOTES] Quote isLatestVersion flag:', newQuoteVersion.isLatestVersion);
         
         const frontendCompatibleResponse = prepareQuoteForFrontend(newQuoteVersion);
-        res.status(201).json(frontendCompatibleResponse); // Removed 'return'
+        res.status(201).json(frontendCompatibleResponse);
     } catch (error) {
         console.error('🚨 [QUOTES] Error creating quote v1:', error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -243,18 +247,16 @@ router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRe
             const field_name = error.meta?.field_name as string | undefined;
             if (error.code === 'P2002') {
                 res.status(409).json({ message: `Conflict creating quote. Unique constraint failed on field(s): ${target || 'unknown'}` });
-                return; // Add return for early exit
+                return;
             }
             if (error.code === 'P2003') {
                 res.status(400).json({ message: `Invalid input. Foreign key constraint failed on field: ${field_name || 'unknown'}` });
-                return; // Add return for early exit
+                return;
             }
         }
         res.status(500).json({ message: 'Failed to create quote', error: (error as Error).message });
     }
 }));
-
-
 
 router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     console.log('🚦 [PROD DEBUG] Incoming PUT /quotes/:id');
@@ -267,10 +269,8 @@ router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(async (req: Auth
     return updateQuote(req, res, next);
 }));
 
-// DELETE route - ADD AUDIT MIDDLEWARE
 router.delete('/:id', auditQuoteMiddleware('DELETE'), asyncHandler(deleteQuote));
 
-// Create wrappers for service functions to work with route handlers
 const cloneQuoteHandler = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { customerId, title } = req.body;
@@ -309,13 +309,10 @@ const convertQuoteToOrderHandler = async (req: AuthRequest, res: Response) => {
     }
 };
 
-// CLONE route - This creates a new quote, so audit as CREATE
 router.post('/:id/clone', auditQuoteMiddleware('CREATE'), asyncHandler(cloneQuoteHandler));
-
-// CONVERT TO ORDER route - Important for audit trail
 router.post('/:id/convert-to-order', auditQuoteMiddleware('CONVERTED_TO_ORDER'), asyncHandler(convertQuoteToOrderHandler));
 
 console.log('🎯 [QUOTES] Router setup complete - exporting router');
 
-export default router;// Production rebuild Fri Sep 26 20:07:54 BST 2025
+export default router;
 console.log('Force rebuild Sat Sep 27 10:10:22 BST 2025');
