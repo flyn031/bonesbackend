@@ -51,12 +51,13 @@ export const createJob = async (req: AuthRequest, res: Response) => {
 
     let determinedCustomerId: string | undefined = undefined;
     let orderConnect: Prisma.OrderCreateNestedManyWithoutJobInput | undefined = undefined;
-
-    if (orderId) {
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { customerId: true, customerName: true, contactEmail: true, contactPhone: true, id: true }
-      });
+    let order: any = null;
+    
+     if (orderId) {
+     const order = await prisma.order.findUnique({
+     where: { id: orderId },
+     select: { customerId: true, customerName: true, contactEmail: true, contactPhone: true, id: true, customerReference: true }
+     });
 
       if (!order) {
         return res.status(404).json({ message: `Order with ID ${orderId} not found` });
@@ -108,17 +109,15 @@ export const createJob = async (req: AuthRequest, res: Response) => {
     }
 
     const jobData: Prisma.JobCreateInput = {
-      title,
-      description: description || undefined,
-      status: (status as JobStatus) || JobStatus.DRAFT, // ✅ FIXED: Default to DRAFT (new jobs start as drafts)
-      startDate: startDate ? new Date(startDate) : new Date(),
-      expectedEndDate: validExpectedEndDate,
-      // estimatedCost: parsedEstimatedCost, // Add if 'estimatedCost' is on Job model
-      customer: { connect: { id: determinedCustomerId } },
-      ...(orderConnect && { orders: orderConnect }),
-      // createdBy is not on Job model.
-      // assignedUsers relation is not defined in schema.
-    };
+    title,
+    description: description || undefined,
+    customerReference: order?.customerReference || undefined,
+    status: (status as JobStatus) || JobStatus.DRAFT,
+    startDate: startDate ? new Date(startDate) : new Date(),
+    expectedEndDate: validExpectedEndDate,
+    customer: { connect: { id: determinedCustomerId } },
+   ...(orderConnect && { orders: orderConnect }),
+   };
 
     const newJob = await prisma.job.create({
       data: jobData,
@@ -203,19 +202,19 @@ export const getJobs = async (req: AuthRequest, res: Response) => {
     }
 
     const jobs = await prisma.job.findMany({
-      where,
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        createdAt: true,
-        expectedEndDate: true,
-        // estimatedCost: true, // REMOVED
-        status: true,
-        customer: { select: { id: true, name: true } },
-        costs: { select: { amount: true } },
-        _count: { select: { orders: true, materials: true }}
-      },
+    where,
+    select: {
+    id: true,
+    title: true,
+    description: true,
+    createdAt: true,
+    expectedEndDate: true,
+    customerReference: true,  // ADDED
+    status: true,
+    customer: { select: { id: true, name: true } },
+    costs: { select: { amount: true } },
+    _count: { select: { orders: true, materials: true }}
+  },
       skip: skip,
       take: limitNum,
       orderBy: [orderBy] // orderBy should be an array
