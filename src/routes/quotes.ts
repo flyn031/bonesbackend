@@ -7,7 +7,6 @@ import { PrismaClient, QuoteStatus, Prisma } from '@prisma/client';
 import {
   getFrequentItems,
   getQuoteById,
-  updateQuoteStatus,
   updateQuote,
   deleteQuote,
   createQuote,
@@ -17,7 +16,8 @@ import {
   getQuoteHistoryByReference,
   cloneQuoteController,
   convertQuoteToOrderController,
-  createQuoteV1 
+  createQuoteV1,
+  updateQuoteStatus  // MOVE THIS HERE - it's a service function
 } from '../services/quoteService';
 
 import { auditQuoteMiddleware, auditStatusChangeMiddleware } from '../middleware/auditMiddleware';
@@ -101,10 +101,10 @@ function prepareQuoteForFrontend(quote: any): any {
         changeReason: quote.changeReason || '',
         parentQuoteId: quote.parentQuoteId || null,
         termsAndConditions: quote.termsAndConditions || '',
-        paymentTerms: quote.paymentTerms || '', // FIXED: Added
-        deliveryTerms: quote.deliveryTerms || '', // FIXED: Added
-        warranty: quote.warranty || '', // FIXED: Added
-        exclusions: quote.exclusions || '', // FIXED: Added
+        paymentTerms: quote.paymentTerms || '',
+        deliveryTerms: quote.deliveryTerms || '',
+        warranty: quote.warranty || '',
+        exclusions: quote.exclusions || '',
     };
     return baseQuote;
 }
@@ -176,7 +176,6 @@ const getQuoteHistoryByReferenceHandler = async (req: AuthRequest, res: Response
 router.get('/history/:quoteReference', asyncHandler(getQuoteHistoryByReferenceHandler));
 router.get('/:id', asyncHandler(getQuoteById));
 
-// FIXED: Added 4 new fields to destructuring and quoteData
 router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRequest, res: Response) => {
     console.log('🎯 [QUOTES] CREATE route hit');
     const { 
@@ -193,10 +192,10 @@ router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRe
         value, 
         totalAmount, 
         termsAndConditions,
-        paymentTerms, // FIXED: Added
-        deliveryTerms, // FIXED: Added
-        warranty, // FIXED: Added
-        exclusions // FIXED: Added
+        paymentTerms,
+        deliveryTerms,
+        warranty,
+        exclusions
     } = req.body;
     
     if (!customerId || !title || !items || !Array.isArray(items)) {
@@ -213,10 +212,10 @@ router.post('/', auditQuoteMiddleware('CREATE'), asyncHandler(async (req: AuthRe
         title, 
         description,
         termsAndConditions,
-        paymentTerms, // FIXED: Added
-        deliveryTerms, // FIXED: Added
-        warranty, // FIXED: Added
-        exclusions, // FIXED: Added
+        paymentTerms,
+        deliveryTerms,
+        warranty,
+        exclusions,
         lineItems: items.map((item: any) => ({
             description: item.description || '',
             quantity: parseFloat(item.quantity?.toString() || '1') || 1,
@@ -267,6 +266,28 @@ router.put('/:id', auditQuoteMiddleware('UPDATE'), asyncHandler(async (req: Auth
     console.log('🚦 [PROD DEBUG] Content-Type:', req.headers['content-type']);
     
     return updateQuote(req, res, next);
+}));
+
+// Update quote status
+router.patch('/:id/status', asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  const userId = req.user?.id;
+  
+  if (!userId) {
+    return res.status(401).json({ message: 'User authentication failed' });
+  }
+  
+  console.log(`🎯 [QUOTES] PATCH /:id/status - Updating quote ${id} to status ${status}`);
+  
+  try {
+    const updatedQuote = await updateQuoteStatus(id, status, userId);
+    const formatted = prepareQuoteForFrontend(updatedQuote);
+    res.json(formatted);
+  } catch (error) {
+    console.error('🚨 [QUOTES] Error updating quote status:', error);
+    res.status(500).json({ message: 'Failed to update quote status', error: (error as Error).message });
+  }
 }));
 
 router.delete('/:id', auditQuoteMiddleware('DELETE'), asyncHandler(deleteQuote));

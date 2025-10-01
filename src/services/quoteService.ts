@@ -366,6 +366,7 @@ export const convertQuoteToOrder = async (quoteId: string, userId: string) => {
     const orderData: Prisma.OrderCreateInput = {
         projectTitle: quoteVersion.title || `Order from Quote ${quoteVersion.quoteNumber || quoteId}`,
         quoteRef: quoteVersion.quoteNumber || quoteVersion.quoteReference || quoteId,
+        customerReference: quoteVersion.customerReference,
         orderType: OrderType.CUSTOMER_LINKED,
         status: OrderStatus.IN_PRODUCTION,
         customerName: quoteVersion.customer.name,

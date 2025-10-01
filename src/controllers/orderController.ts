@@ -226,6 +226,7 @@ export const updateOrderStatus = async (req: Request, res: Response, next: NextF
                 jobCreated = await prisma.job.create({
                     data: {
                         title: existingOrder.projectTitle,
+                        customerReference: existingOrder.customerReference,
                         description: existingOrder.notes || `Job created from approved order ${existingOrder.quoteRef || existingOrder.id}`,
                         status: JobStatus.ACTIVE, // ✅ FIXED: Use valid JobStatus from database
                         customerId: existingOrder.customerId || existingOrder.customer?.id || '',

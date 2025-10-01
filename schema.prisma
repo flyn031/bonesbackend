@@ -62,6 +62,7 @@ model Employee {
 model Job {
   id              String        @id @default(cuid())
   title           String
+  customerReference String?      // ADD THIS - Inherited from quote/order
   description     String?
   status          JobStatus     @default(ACTIVE)
   customerId      String
@@ -166,6 +167,7 @@ model Order {
   id                 String             @id @default(cuid())
   projectTitle       String
   quoteRef           String
+  customerReference  String?            // ADD THIS - Customer's own reference number
   orderType          OrderType          @default(CUSTOMER_LINKED)
   status             OrderStatus        @default(IN_PRODUCTION)
   customerName       String
